@@ -1,15 +1,13 @@
 ﻿using System;
 using System.Windows.Data;
+using System.Globalization;
 
 namespace youtube_dl_gui.Converters
 {
     [ValueConversion(typeof(bool), typeof(bool))]
     public class InverseBooleanConverter : IValueConverter
     {
-        #region IValueConverter Members
-
-        public object Convert(object value, Type targetType, object parameter,
-            System.Globalization.CultureInfo culture)
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (targetType != typeof(bool))
                 throw new InvalidOperationException("The target must be a boolean");
@@ -22,7 +20,19 @@ namespace youtube_dl_gui.Converters
         {
             throw new NotSupportedException();
         }
+    }
 
-        #endregion
+    [ValueConversion(typeof(string), typeof(bool))]
+    public class EmptyStringConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return !string.IsNullOrWhiteSpace((string)value);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

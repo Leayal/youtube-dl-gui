@@ -12,6 +12,7 @@ using MahApps.Metro.Controls.Dialogs;
 using Microsoft.Win32;
 using System.Windows.Controls;
 using youtube_dl_gui.Youtube;
+using System.Text.RegularExpressions;
 
 namespace youtube_dl_gui
 {
@@ -63,6 +64,8 @@ namespace youtube_dl_gui
         private YoutubeDL youtubeTool;
         private Dictionary<string, YoutubeVideoInfo> cache_youtubeinfo;
         private RegistryKey registry;
+        private VideoDownloadSession currentDownloadSession;
+        private Regex regex_InvalidPathCharacters;
 
         public MainWindow()
         {
@@ -87,6 +90,9 @@ namespace youtube_dl_gui
                     }
                 });
             }
+
+            this.regex_InvalidPathCharacters = new Regex($"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
             this.cache_youtubeinfo = new Dictionary<string, YoutubeVideoInfo>();
             this.youtubeTool = new YoutubeDL();
             this.InitializeComponent();
@@ -163,7 +169,7 @@ namespace youtube_dl_gui
         {
             // https://www.youtube.com/watch?v=O6NlT9PXqwE
             string youtubeurl = this.TextBoxYoutubeLink.Text;
-            if (string.IsNullOrWhiteSpace(youtubeurl))
+            if (currentDownloadSession != null || string.IsNullOrWhiteSpace(youtubeurl))
             {
                 return;
             }
@@ -191,69 +197,143 @@ namespace youtube_dl_gui
                 };
             }
 
-            var formats = something.Formats;
-            StringBuilder sb = new StringBuilder(160);
+            var formats = new List<YoutubeVideoFormat>(something.Formats.Count);
+            var formatStrings = new List<string>(something.Formats.Count);
+            Dictionary<string, YoutubeVideoFormat> filterData = new Dictionary<string, YoutubeVideoFormat>(StringComparer.OrdinalIgnoreCase);
 
-            SortedDictionary<string, YoutubeVideoFormat> filterData = new SortedDictionary<string, YoutubeVideoFormat>(StringComparer.OrdinalIgnoreCase);
-
-            for (int i = 0; i < formats.Count; i++)
+            await Task.Run(() =>
             {
-                string formatName = GetFriendlyFormatExtension(formats[i]);
-                sb.Append(formatName);
-                sb.Append(" ");
-                bool isAudio = (formats[i].VideoCodec == null);
-                if (isAudio)
-                {
-                    // Audio only
-                    sb.Append("Audio");
-                }
-                else
-                {
-                    // Video only
-                    sb.Append(formats[i].FormatNote);
-                    sb.Append(" Video");
-                }
-                if (formatName == "Vorbis")
-                {
-                    sb.Append(" (*.ogg)|*.ogg");
-                }
-                else if (formatName == "Opus")
-                {
-                    sb.Append(" (*.opus)|*.opus");
-                }
-                else if (formats[i].FileExtension.Equals("webm", StringComparison.OrdinalIgnoreCase))
-                {
-                    sb.Append(" (*.mkv)|*.mkv");
-                }
-                else
-                {
-                    sb.Append(" (*.");
-                    sb.Append(formats[i].FileExtension);
-                    sb.Append(")|*.");
-                    sb.Append(formats[i].FileExtension);
-                }
+                StringBuilder sb = new StringBuilder(160);
+                List<YoutubeVideoFormat> audioOnly = new List<YoutubeVideoFormat>(),
+                    videoOnly = new List<YoutubeVideoFormat>(),
+                    video = new List<YoutubeVideoFormat>();
 
-                filterData[sb.ToString()] = formats[i];
-                sb.Clear();
-            }
+                for (int i = 0; i < something.Formats.Count; i++)
+                {
+                    var format = something.Formats[i];
+                    bool hasAudio = !string.IsNullOrEmpty(format.AudioCodec),
+                        hasVideo = !string.IsNullOrEmpty(format.VideoCodec);
+                    if (hasAudio && hasVideo)
+                    {
+                        video.Add(format);
+                    }
+                    else
+                    {
+                        if (hasVideo)
+                        {
+                            videoOnly.Add(format);
+                        }
+                        else
+                        {
+                            audioOnly.Add(format);
+                        }
+                    }
+                }
+                audioOnly.Sort(YoutubeVideoFormatComparer.Revert);
+                videoOnly.Sort(YoutubeVideoFormatComparer.Revert);
+                video.Sort(YoutubeVideoFormatComparer.Revert);
 
-            var indexing = filterData.Keys.ToArray();
-            sfd.Filter = string.Join("|", indexing);
+                Action<YoutubeVideoFormat> handleData = (format) =>
+                {
+                    string formatName = GetFriendlyFormatExtension(format);
+                    sb.Append(formatName);
+                    sb.Append(" ");
+                    bool hasAudio = (format.AudioCodec != null),
+                        hasVideo = (format.VideoCodec != null);
+                    if (hasVideo && hasAudio)
+                    {
+                        var theHeight = format.VideoResolution.Height;
+                        if (theHeight == 0)
+                        {
+                            sb.Append(format.FormatNote);
+                        }
+                        else
+                        {
+                            sb.Append(theHeight);
+                            sb.Append("p");
+                            if (format.FPS.HasValue && format.FPS.Value != 30)
+                                sb.Append(format.FPS.Value);
+                        }
+
+                        sb.Append(" Video");
+                    }
+                    else
+                    {
+                        if (hasAudio)
+                        {
+                            // Audio only
+                            sb.Append(format.AudioBirate);
+                            sb.Append("k [Audio Only]");
+                        }
+                        else
+                        {
+                            // Video only
+                            var theHeight = format.VideoResolution.Height;
+                            if (theHeight == 0)
+                            {
+                                sb.Append(format.FormatNote);
+                            }
+                            else
+                            {
+                                sb.Append(theHeight);
+                                sb.Append("p");
+                                if (format.FPS.HasValue && format.FPS.Value != 30)
+                                    sb.Append(format.FPS.Value);
+                            }
+                            sb.Append(" [Video Only]");
+                        }
+                    }
+
+                    if (formatName == "Vorbis")
+                    {
+                        sb.Append(" (*.ogg)|*.ogg");
+                    }
+                    else if (formatName == "Opus")
+                    {
+                        sb.Append(" (*.opus)|*.opus");
+                    }
+                    else if (format.FileExtension.Equals("webm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sb.Append(" (*.mkv)|*.mkv");
+                    }
+                    else
+                    {
+                        sb.Append(" (*.");
+                        sb.Append(format.FileExtension);
+                        sb.Append(")|*.");
+                        sb.Append(format.FileExtension);
+                    }
+
+                    string filterName = sb.ToString();
+                    sb.Clear();
+                    formatStrings.Add(filterName);
+                    filterData[filterName] = format;
+                };
+
+                foreach (var format in video)
+                    handleData(format);
+                foreach (var format in videoOnly)
+                    handleData(format);
+                foreach (var format in audioOnly)
+                    handleData(format);
+            });
+
+            sfd.Filter = string.Join("|", formatStrings);
             sfd.Title = "Download '" + something.Title + "'";
-            sfd.FileName = something.Title + "-" + something.VideoID;
+            sfd.FileName = this.regex_InvalidPathCharacters.Replace(something.Title + "-" + something.VideoID, "-");
 
             if (sfd.ShowDialog(this) == true)
             {
-                string formatString = indexing[sfd.FilterIndex - 1];
+                string formatString = formatStrings[sfd.FilterIndex - 1];
                 if (filterData.TryGetValue(formatString, out var selectedFormat))
                 {
                     this.Session_ProgressChanged(null, 0);
                     this.SetValue(IsYoutubeDownloadingIndeterminateProperty, false);
                     this.SetValue(YoutubeDownloadingTextProperty, $"Downloading: {formatString}\nTo: {sfd.FileName}");
-                    var session = this.youtubeTool.PrepareVideoDownload(selectedFormat);
-                    session.ProgressChanged += Session_ProgressChanged;
-                    session.DownloadCompleted += Session_DownloadCompleted;
-                    session.StartDownload(sfd.FileName);
+                    currentDownloadSession = this.youtubeTool.PrepareVideoDownload(selectedFormat);
+                    currentDownloadSession.ProgressChanged += Session_ProgressChanged;
+                    currentDownloadSession.DownloadCompleted += Session_DownloadCompleted;
+                    currentDownloadSession.StartDownload(sfd.FileName);
                 }
                 else
                 {
@@ -264,6 +344,166 @@ namespace youtube_dl_gui
             else
             {
                 this.SetValue(IsYoutubeDownloadingProperty, false);
+            }
+        }
+
+        class YoutubeVideoFormatComparer : IComparer<YoutubeVideoFormat>
+        {
+            class RevertYoutubeVideoFormatComparer : YoutubeVideoFormatComparer
+            {
+                internal RevertYoutubeVideoFormatComparer() : base() { }
+
+                public override int Compare(YoutubeVideoFormat left, YoutubeVideoFormat right) => -base.Compare(left, right);
+            }
+            public static readonly YoutubeVideoFormatComparer Default = new YoutubeVideoFormatComparer();
+            public static readonly YoutubeVideoFormatComparer Revert = new RevertYoutubeVideoFormatComparer();
+
+            private YoutubeVideoFormatComparer() { }
+
+            public virtual int Compare(YoutubeVideoFormat left, YoutubeVideoFormat right)
+            {
+                bool left_hasVideo = (left.VideoCodec != null),
+                    right_hasVideo = (right.VideoCodec != null);
+
+                if (GetFriendlyFormatExtension(left) == GetFriendlyFormatExtension(right))
+                {
+                    if (left_hasVideo && right_hasVideo)
+                    {
+                        double left_height = left.VideoResolution.Height,
+                            right_height = right.VideoResolution.Height;
+
+                        if (left_height == right_height)
+                        {
+                            int leftFPS = left.FPS.HasValue ? left.FPS.Value : 30,
+                                rightFPS = right.FPS.HasValue ? right.FPS.Value : 30;
+                            if (leftFPS == rightFPS)
+                            {
+                                int left_priority = GetFormatPriority(left),
+                                    right_priority = GetFormatPriority(right);
+                                if (left_priority == right_priority)
+                                {
+                                    return 0;
+                                }
+                                else if (left_priority > right_priority)
+                                {
+                                    return 1;
+                                }
+                                else
+                                {
+                                    return -1;
+                                }
+                            }
+                            else if (leftFPS > rightFPS)
+                            {
+                                return 1;
+                            }
+                            else
+                            {
+                                return -1;
+                            }
+                        }
+                        else if (left_height > right_height)
+                        {
+                            return 1;
+                        }
+                        else
+                        {
+                            return -1;
+                        }
+                    }
+                    else if (!left_hasVideo && !right_hasVideo)
+                    {
+                        int left_audiobitrate = left.AudioBirate.Value,
+                            right_audiobitrate = right.AudioBirate.Value;
+
+                        if (left_audiobitrate == right_audiobitrate)
+                        {
+                            int left_priority = GetFormatPriority(left),
+                              right_priority = GetFormatPriority(right);
+                            if (left_priority == right_priority)
+                            {
+                                return 0;
+                            }
+                            else if (left_priority > right_priority)
+                            {
+                                return 1;
+                            }
+                            else
+                            {
+                                return -1;
+                            }
+                        }
+                        else if (left_audiobitrate > right_audiobitrate)
+                        {
+                            return 1;
+                        }
+                        else
+                        {
+                            return -1;
+                        }
+                    }
+                    else
+                    {
+                        if (left_hasVideo)
+                        {
+                            return 1;
+                        }
+                        else
+                        {
+                            return -1;
+                        }
+                    }
+                }
+                else
+                {
+                    int left_priority = GetFormatPriority(left),
+                        right_priority = GetFormatPriority(right);
+                    if (left_priority == right_priority)
+                    {
+                        return 0;
+                    }
+                    else if (left_priority > right_priority)
+                    {
+                        return 1;
+                    }
+                    else
+                    {
+                        return -1;
+                    }
+                }
+            }
+        }
+
+        static int GetFormatPriority(YoutubeVideoFormat format)
+        {
+            string formatString = format.VideoCodec ?? format.AudioCodec;
+            if (formatString.Equals("opus", StringComparison.OrdinalIgnoreCase))
+            {
+                return -3;
+            }
+            else if (formatString.Equals("vorbis", StringComparison.OrdinalIgnoreCase))
+            {
+                return -5;
+            }
+            else if (formatString.Equals("vp9", StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+            else if (formatString.Equals("vp8.0", StringComparison.OrdinalIgnoreCase) || formatString.Equals("vp8", StringComparison.OrdinalIgnoreCase))
+            {
+                return -2;
+            }
+            else if (formatString.StartsWith("avc1", StringComparison.OrdinalIgnoreCase))
+            {
+                return -1;
+            }
+            else if (formatString.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
+            {
+                return -4;
+            }
+            else
+            {
+                return 0;
             }
         }
 
@@ -313,14 +553,33 @@ namespace youtube_dl_gui
 
         private void Session_DownloadCompleted(object sender, DownloadCompletedEventArgs e)
         {
-            this.Dispatcher.BeginInvoke(new Session_ProgressChangedA(() =>
+            currentDownloadSession = null;
+            if (!e.Cancelled)
             {
-                this.SetValue(IsYoutubeDownloadingProperty, false);
-                if (MessageBox.Show(this, $"Do you want to open output folder?", "Prompt", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                if (e.Error != null)
                 {
-                    Process.Start("explorer.exe", $"/select,\"{e.DownloadDestination}\"");
+                    this.Dispatcher.BeginInvoke(new Session_ProgressChangedA(() =>
+                    {
+                        this.SetValue(IsYoutubeDownloadingProperty, false);
+                        MessageBox.Show(this, e.Error.ToString(), "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }));
                 }
-            }));
+                else
+                {
+                    this.Dispatcher.BeginInvoke(new Session_ProgressChangedA(() =>
+                    {
+                        this.SetValue(IsYoutubeDownloadingProperty, false);
+                        if (MessageBox.Show(this, $"Do you want to open output folder?", "Prompt", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                        {
+                            Process.Start("explorer.exe", $"/select,\"{e.DownloadDestination}\"");
+                        }
+                    }));
+                }
+            }
+            else
+            {
+                this.Dispatcher.BeginInvoke(new Session_ProgressChangedA(() => this.SetValue(IsYoutubeDownloadingProperty, false)));
+            }
         }
 
         private void Session_ProgressChanged(object sender, double e)
@@ -332,5 +591,19 @@ namespace youtube_dl_gui
         }
 
         private delegate void Session_ProgressChangedA();
+
+        bool buttonCancelDownload_ClickLeft;
+        private void ButtonCancelDownload_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
+            {
+                this.buttonCancelDownload_ClickLeft = true;
+            }
+            else if (this.buttonCancelDownload_ClickLeft)
+            {
+                this.buttonCancelDownload_ClickLeft = false;
+                this.currentDownloadSession?.CancelDownload();
+            }
+        }
     }
 }

@@ -91,16 +91,28 @@ namespace youtube_dl_gui.Youtube
         private YoutubeDL _tool;
         private int state;
         private YoutubeVideoFormat myformat;
+        private CancellationTokenSource cancelSource;
+        private Process proc;
 
         public VideoDownloadSession(YoutubeDL tool, YoutubeVideoFormat format)
         {
             this._tool = tool;
             this.state = 0;
             this.myformat = format;
+            this.cancelSource = new CancellationTokenSource();
         }
 
         public Action<VideoDownloadSession, double> ProgressChanged;
         public Action<VideoDownloadSession, DownloadCompletedEventArgs> DownloadCompleted;
+
+        public void CancelDownload()
+        {
+            if (Interlocked.CompareExchange(ref this.state, 0, 1) == 1 && proc != null)
+            {
+                this.cancelSource.Cancel();
+                KillNicelyCmdProg.Experiments.StopProgramByAttachingToItsConsoleAndIssuingCtrlCEvent(proc);
+            }
+        }
 
         /// <summary>
         /// 
@@ -109,14 +121,16 @@ namespace youtube_dl_gui.Youtube
         /// <exception cref="InvalidOperationException">The download has already been started.</exception>
         public void StartDownload(string outputFile)
         {
-            if (Interlocked.Exchange(ref this.state, 1) == 0)
+            int currentState = Interlocked.CompareExchange(ref this.state, 1, 0);
+            if (currentState == 0)
             {
                 string youtube_tool = this._tool.YoutubeDLPath;
                 if (string.IsNullOrWhiteSpace(youtube_tool))
                     throw new InvalidOperationException();
                 Task.Run(() =>
                 {
-                    using (Process proc = new Process()
+                    Exception myex = null;
+                    using (proc = new Process()
                     {
                         StartInfo = new ProcessStartInfo(youtube_tool, $"--no-warnings --newline --no-part --hls-prefer-native --no-call-home --format \"{this.myformat.FormatID}\" -o \"{outputFile}\" {myformat.sourceInfo.VideoHomepage.OriginalString}")
                         {
@@ -128,7 +142,6 @@ namespace youtube_dl_gui.Youtube
                     })
                     {
                         proc.Start();
-                        Exception myex = null;
                         try
                         {
                             string eachline = proc.StandardOutput.ReadLine();
@@ -160,19 +173,21 @@ namespace youtube_dl_gui.Youtube
                         catch (Exception ex)
                         {
                             myex = ex;
+                            Interlocked.Exchange(ref this.state, 0);
                         }
                         finally
                         {
                             if (!proc.HasExited)
                                 proc.Kill();
                             proc.WaitForExit(5000);
+                            Interlocked.Exchange(ref this.state, 2);
                         }
-
-                        this.DownloadCompleted.BeginInvoke(this, new DownloadCompletedEventArgs(outputFile, myex), this.DownloadCompleted.EndInvoke, null);
                     }
+                    proc = null;
+                    this.DownloadCompleted.BeginInvoke(this, new DownloadCompletedEventArgs(outputFile, this.cancelSource.IsCancellationRequested, myex), this.DownloadCompleted.EndInvoke, null);
                 }).ConfigureAwait(false);
             }
-            else
+            else if (currentState == 1)
             {
                 throw new InvalidOperationException("The download has already been started.");
             }
@@ -183,8 +198,17 @@ namespace youtube_dl_gui.Youtube
     {
         public Exception Error { get; }
         public string DownloadDestination { get; }
-        public DownloadCompletedEventArgs(string destinationFile, Exception ex) : base()
+        public bool Cancelled { get; }
+
+        public DownloadCompletedEventArgs(string destinationFile) : this(destinationFile, false, null) { }
+
+        public DownloadCompletedEventArgs(string destinationFile, Exception ex) : this(destinationFile, false, ex) { }
+
+        public DownloadCompletedEventArgs(string destinationFile, bool cancelled) : this(destinationFile, cancelled, null) { }
+
+        public DownloadCompletedEventArgs(string destinationFile, bool cancelled, Exception ex) : base()
         {
+            this.Cancelled = cancelled;
             this.Error = ex;
             this.DownloadDestination = destinationFile;
         }
@@ -277,6 +301,7 @@ namespace youtube_dl_gui.Youtube
 
         public long FileSize { get; }
         public int? FPS { get; }
+        public System.Windows.Size VideoResolution { get; }
 
         public Uri DirectLink { get; }
 
@@ -292,7 +317,7 @@ namespace youtube_dl_gui.Youtube
             this.Protocol = data.Value<string>("protocol");
 
             string tmp_str = data.Value<string>("acodec");
-            if (string.Equals(tmp_str, "none", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(tmp_str) || string.Equals(tmp_str, "none", StringComparison.OrdinalIgnoreCase))
             {
                 this.AudioCodec = null;
             }
@@ -302,15 +327,20 @@ namespace youtube_dl_gui.Youtube
             }
 
             tmp_str = data.Value<string>("vcodec");
-            if (string.Equals(tmp_str, "none", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(tmp_str) || string.Equals(tmp_str, "none", StringComparison.OrdinalIgnoreCase))
             {
+                this.VideoResolution = new System.Windows.Size(0, 0);
                 this.VideoCodec = null;
             }
             else
             {
+                int? int_width = data.Value<int?>("width"),
+                int_height = data.Value<int?>("height");
+
+                this.VideoResolution = new System.Windows.Size(int_width.HasValue ? int_width.Value : 0, int_height.HasValue ? int_height.Value : 0);
+
                 this.VideoCodec = tmp_str;
             }
-
             this.FPS = data.Value<int?>("fps");
             this.Bitrate = data.Value<double>("tbr");
             this.AudioBirate = data.Value<int?>("abr");
