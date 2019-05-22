@@ -1,0 +1,64 @@
+﻿<mahapps:MetroWindow x:Class="youtube_dl_gui.MainWindow"
+                      xmlns:mahapps="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+                      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                      xmlns:local="clr-namespace:youtube_dl_gui"
+                      mc:Ignorable="d"
+                      Title="User Interface for youtube-dl" Height="480" Width="640" SizeToContent="Height" Loaded="MetroWindow_Loaded" x:Name="myself" TitleCaps="False" ResizeMode="CanMinimize">
+    <Grid Margin="2">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition />
+        </Grid.RowDefinitions>
+        
+        <Label Content="Tool path:" />
+        <TextBox Grid.Column="1" IsEnabled="{Binding ElementName=myself,Mode=OneWay,Path=IsInStartUp,Converter={StaticResource InverseBooleanConverter}}" Text="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDLPath}" IsReadOnly="True" IsReadOnlyCaretVisible="True" />
+        <Button Grid.Column="2" Content="Browse" IsEnabled="{Binding ElementName=myself,Mode=OneWay,Path=IsToolBrowseAvailable}" Click="ButtonBrowseTool_Click" />
+
+        <mahapps:MetroAnimatedTabControl Grid.Row="1" Grid.ColumnSpan="3">
+            <mahapps:MetroTabItem Visibility="Collapsed" IsSelected="{Binding ElementName=myself,Mode=OneWay,Path=IsInStartUp}">
+                <TextBlock TextAlignment="Center" Text="{Binding ElementName=myself,Mode=OneWay,Path=StarUpText}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </mahapps:MetroTabItem>
+            <mahapps:MetroTabItem Visibility="Collapsed" IsSelected="{Binding ElementName=myself,Mode=OneWay,Path=IsInStartUp,Converter={StaticResource InverseBooleanConverter}}">
+                <mahapps:MetroAnimatedTabControl>
+                    <mahapps:MetroTabItem Visibility="Collapsed" IsSelected="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloading,Converter={StaticResource InverseBooleanConverter}}">
+                        <GroupBox Header="Youtube Download" mahapps:ControlsHelper.ContentCharacterCasing="Normal">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Label Content="Youtube link:" />
+                                <TextBox Grid.Column="1" x:Name="TextBoxYoutubeLink" KeyUp="TextBoxYoutubeLink_KeyUp" />
+                                <Button Grid.Column="2" Content="Download" Click="ButtonYoutubeLink_Click" />
+                            </Grid>
+                        </GroupBox>
+                    </mahapps:MetroTabItem>
+                    <mahapps:MetroTabItem Visibility="Collapsed" IsSelected="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloading}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDownloadingText}" />
+                            <mahapps:ProgressRing Grid.Row="1" mahapps:VisibilityHelper.IsVisible="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloadingIndeterminate}" />
+                            <mahapps:MetroProgressBar Grid.Row="1" mahapps:VisibilityHelper.IsCollapsed="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloadingIndeterminate}" Value="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDownloadingProgress}" />
+                        </Grid>
+                    </mahapps:MetroTabItem>
+                </mahapps:MetroAnimatedTabControl>
+            </mahapps:MetroTabItem>
+        </mahapps:MetroAnimatedTabControl>
+    </Grid>
+</mahapps:MetroWindow>
