@@ -16,11 +16,5 @@ namespace youtube_dl_gui
         {
             this.InitializeComponent();
         }
-
-        protected override void OnStartup(StartupEventArgs e)
-        {
-            // e.Args
-            base.OnStartup(e);
-        }
     }
 }

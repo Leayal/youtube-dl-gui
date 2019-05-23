@@ -64,6 +64,7 @@
     </ApplicationDefinition>
     <Compile Include="Experiments.cs" />
     <Compile Include="YoutubeDL.cs" />
+    <Compile Include="YoutubeVideoFormatComparer.cs" />
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

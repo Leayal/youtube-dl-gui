@@ -2,11 +2,52 @@
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
 namespace youtube_dl_gui
 {
     static class Helper
     {
+        public static string FirstLetterToUpper(this string str)
+        {
+            if (str == null)
+                return null;
+
+            if (str.Length > 1)
+                return char.ToUpper(str[0]) + str.Substring(1);
+
+            return str.ToUpper();
+        }
+        public static string GetArg(IEnumerable<string> args)
+        {
+            StringBuilder sb = new StringBuilder();
+            bool firstAppend = true;
+            foreach (string str in args)
+            {
+                if (firstAppend)
+                {
+                    firstAppend = false;
+                }
+                else
+                {
+                    sb.Append(' ');
+                }
+                if (str.IndexOf(' ') == -1)
+                {
+                    sb.Append(str);
+                }
+                else
+                {
+                    sb.Append('"');
+                    sb.Append(str);
+                    sb.Append('"');
+                }
+            }
+            return sb.ToString();
+        }
+
         /// <summary>Finds the location of file that match the search pattern. By default, the search is done along the current directory and in the paths specified by the PATH environment variable.</summary>
         /// <param name="filename">The filename to search for</param>
         /// <exception cref="FileNotFoundException">The search yield no result</exception>
@@ -121,7 +162,7 @@ namespace youtube_dl_gui
                         }
                         else
                         {
-                            if (textbuffer.EndsWith("\r\n", System.StringComparison.Ordinal))
+                            if (textbuffer.EndsWith("\r\n", StringComparison.Ordinal))
                             {
                                 tasksrc.SetResult(textbuffer.Remove(textbuffer.Length - 2));
                             }

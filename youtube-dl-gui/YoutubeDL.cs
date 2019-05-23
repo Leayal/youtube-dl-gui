@@ -7,12 +7,14 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Threading;
+using System.Collections.Concurrent;
 
 namespace youtube_dl_gui.Youtube
 {
     class YoutubeDL
     {
         public string YoutubeDLPath { get; set; }
+
         public Task<YoutubeVideoInfo> GetYoutubeVideoInformationAsync(string youtubelink)
         {
             string youtube_tool = this.YoutubeDLPath;
@@ -20,40 +22,48 @@ namespace youtube_dl_gui.Youtube
                 throw new InvalidOperationException();
             return Task.Run(() =>
             {
-                using (Process proc = new Process()
+                Process proc = new Process()
                 {
-                    StartInfo = new ProcessStartInfo(youtube_tool, $"--quiet --no-warnings --simulate --no-call-home --print-json \"{youtubelink}\"")
+                    StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(new string[] {
+                        "--quiet",
+                        "--no-warnings",
+                        "--simulate",
+                        "--no-call-home",
+                        "--print-json",
+                        youtubelink
+                    }))
                     {
                         UseShellExecute = false,
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         CreateNoWindow = true,
                     }
-                })
+                };
+
+                JsonTextReader jtr = null;
+                JObject obj = null;
+
+                proc.Start();
+
+                try
                 {
-                    JsonTextReader jtr = null;
-                    JObject obj = null;
-
-                    proc.Start();
-
-                    try
-                    {
-                        jtr = new JsonTextReader(proc.StandardOutput) { CloseInput = true };
-                        obj = JObject.Load(jtr);
-                    }
-                    finally
-                    {
-                        if (jtr != null)
-                        {
-                            jtr.Close();
-                        }
-                        if (!proc.HasExited)
-                            proc.Kill();
-                        proc.WaitForExit(5000);
-                    }
-
-                    return new YoutubeVideoInfo(obj);
+                    jtr = new JsonTextReader(proc.StandardOutput) { CloseInput = true };
+                    obj = JObject.Load(jtr);
                 }
+                finally
+                {
+                    if (jtr != null)
+                    {
+                        jtr.Close();
+                    }
+                    if (!proc.HasExited)
+                        proc.Kill();
+                    proc.WaitForExit(5000);
+                }
+                proc.Dispose();
+
+                return new YoutubeVideoInfo(obj);
+
             });
         }
 
@@ -84,7 +94,7 @@ namespace youtube_dl_gui.Youtube
         public VideoDownloadSession PrepareVideoDownload(YoutubeVideoFormat format) => new VideoDownloadSession(this, format);
     }
 
-    class VideoDownloadSession
+    class VideoDownloadSession : IDisposable
     {
         const string Progress_DownloadText = "[download]";
 
@@ -99,6 +109,7 @@ namespace youtube_dl_gui.Youtube
             this._tool = tool;
             this.state = 0;
             this.myformat = format;
+            this.proc = new Process();
             this.cancelSource = new CancellationTokenSource();
         }
 
@@ -107,10 +118,13 @@ namespace youtube_dl_gui.Youtube
 
         public void CancelDownload()
         {
-            if (Interlocked.CompareExchange(ref this.state, 0, 1) == 1 && proc != null)
+            if (Interlocked.CompareExchange(ref this.state, 0, 1) == 1)
             {
                 this.cancelSource.Cancel();
-                KillNicelyCmdProg.Experiments.StopProgramByAttachingToItsConsoleAndIssuingCtrlCEvent(proc);
+                if (!proc.HasExited)
+                {
+                    KillNicelyCmdProg.Experiments.StopProgramByAttachingToItsConsoleAndIssuingCtrlCEvent(proc);
+                }
             }
         }
 
@@ -130,60 +144,68 @@ namespace youtube_dl_gui.Youtube
                 Task.Run(() =>
                 {
                     Exception myex = null;
-                    using (proc = new Process()
+                    proc.StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(new string[]
                     {
-                        StartInfo = new ProcessStartInfo(youtube_tool, $"--no-warnings --newline --no-part --hls-prefer-native --no-call-home --format \"{this.myformat.FormatID}\" -o \"{outputFile}\" {myformat.sourceInfo.VideoHomepage.OriginalString}")
-                        {
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            CreateNoWindow = true,
-                        }
-                    })
+                        "--no-warnings",
+                        "--newline",
+                        "--no-part",
+                        "--hls-prefer-native",
+                        "--no-call-home",
+                        "--format",
+                        this.myformat.FormatID,
+                        "--output",
+                        outputFile,
+                        myformat.sourceInfo.VideoHomepage.OriginalString
+                    }))
                     {
-                        proc.Start();
-                        try
-                        {
-                            string eachline = proc.StandardOutput.ReadLine();
-                            int indexOfProgress_DownloadText, indexOfProgress_Percent;
-                            double progressVal;
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true,
+                    };
 
-                            while (!string.IsNullOrEmpty(eachline))
+                    proc.Start();
+                    try
+                    {
+                        string eachline = proc.StandardOutput.ReadLine();
+                        int indexOfProgress_DownloadText, indexOfProgress_Percent;
+                        double progressVal;
+
+                        while (!string.IsNullOrEmpty(eachline))
+                        {
+                            indexOfProgress_DownloadText = eachline.IndexOf(Progress_DownloadText);
+                            if (indexOfProgress_DownloadText == 0)
                             {
-                                indexOfProgress_DownloadText = eachline.IndexOf(Progress_DownloadText);
-                                if (indexOfProgress_DownloadText == 0)
+                                indexOfProgress_DownloadText += Progress_DownloadText.Length;
+                                indexOfProgress_Percent = eachline.IndexOf('%', indexOfProgress_DownloadText);
+                                if (indexOfProgress_Percent != -1)
                                 {
-                                    indexOfProgress_DownloadText += Progress_DownloadText.Length;
-                                    indexOfProgress_Percent = eachline.IndexOf('%', indexOfProgress_DownloadText);
-                                    if (indexOfProgress_Percent != -1)
+                                    eachline = eachline.Substring(indexOfProgress_DownloadText, indexOfProgress_Percent - indexOfProgress_DownloadText);
+                                    if (!string.IsNullOrWhiteSpace(eachline))
                                     {
-                                        eachline = eachline.Substring(indexOfProgress_DownloadText, indexOfProgress_Percent - indexOfProgress_DownloadText);
-                                        if (!string.IsNullOrWhiteSpace(eachline))
+                                        if (double.TryParse(eachline.Trim(), out progressVal))
                                         {
-                                            if (double.TryParse(eachline.Trim(), out progressVal))
-                                            {
-                                                this.ProgressChanged.BeginInvoke(this, progressVal, this.ProgressChanged.EndInvoke, null);
-                                            }
+                                            this.ProgressChanged.BeginInvoke(this, progressVal, this.ProgressChanged.EndInvoke, null);
                                         }
                                     }
                                 }
-                                eachline = proc.StandardOutput.ReadLine();
                             }
+                            eachline = proc.StandardOutput.ReadLine();
                         }
-                        catch (Exception ex)
-                        {
-                            myex = ex;
-                            Interlocked.Exchange(ref this.state, 0);
-                        }
-                        finally
-                        {
-                            if (!proc.HasExited)
-                                proc.Kill();
-                            proc.WaitForExit(5000);
-                            Interlocked.Exchange(ref this.state, 2);
-                        }
+                        Interlocked.Exchange(ref this.state, 2);
                     }
-                    proc = null;
+                    catch (Exception ex)
+                    {
+                        myex = ex;
+                        Interlocked.Exchange(ref this.state, 0);
+                    }
+                    finally
+                    {
+                        if (!proc.HasExited)
+                            proc.Kill();
+                        proc.WaitForExit(5000);
+                    }
+
                     this.DownloadCompleted.BeginInvoke(this, new DownloadCompletedEventArgs(outputFile, this.cancelSource.IsCancellationRequested, myex), this.DownloadCompleted.EndInvoke, null);
                 }).ConfigureAwait(false);
             }
@@ -192,6 +214,8 @@ namespace youtube_dl_gui.Youtube
                 throw new InvalidOperationException("The download has already been started.");
             }
         }
+
+        public void Dispose() => this.proc.Dispose();
     }
 
     class DownloadCompletedEventArgs : EventArgs
@@ -305,7 +329,7 @@ namespace youtube_dl_gui.Youtube
 
         public Uri DirectLink { get; }
 
-        internal YoutubeVideoInfo sourceInfo;
+        internal readonly YoutubeVideoInfo sourceInfo;
 
         public YoutubeVideoFormat(YoutubeVideoInfo source, JToken data)
         {

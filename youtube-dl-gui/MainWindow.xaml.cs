@@ -91,8 +91,14 @@ namespace youtube_dl_gui
                 });
             }
 
-            this.regex_InvalidPathCharacters = new Regex($"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            this.regex_InvalidPathCharacters = new Regex($"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}–]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+            this.sfd = new SaveFileDialog()
+            {
+                AddExtension = true,
+                OverwritePrompt = true,
+                RestoreDirectory = true
+            };
             this.cache_youtubeinfo = new Dictionary<string, YoutubeVideoInfo>();
             this.youtubeTool = new YoutubeDL();
             this.InitializeComponent();
@@ -139,6 +145,7 @@ namespace youtube_dl_gui
             {
                 ofd = new OpenFileDialog()
                 {
+                    Title = "Browse for youtube-dl executable",
                     Filter = "Executable files (*.exe)|*.exe",
                     DefaultExt = "exe",
                     Multiselect = false,
@@ -167,7 +174,6 @@ namespace youtube_dl_gui
 
         private async void ButtonYoutubeLink_Click(object sender, RoutedEventArgs e)
         {
-            // https://www.youtube.com/watch?v=O6NlT9PXqwE
             string youtubeurl = this.TextBoxYoutubeLink.Text;
             if (currentDownloadSession != null || string.IsNullOrWhiteSpace(youtubeurl))
             {
@@ -185,16 +191,6 @@ namespace youtube_dl_gui
             {
                 something = await this.youtubeTool.GetYoutubeVideoInformationAsync(youtubeurl);
                 this.cache_youtubeinfo.Add(youtubeurl, something);
-            }
-
-            if (sfd == null)
-            {
-                sfd = new SaveFileDialog()
-                {
-                    AddExtension = true,
-                    OverwritePrompt = true,
-                    RestoreDirectory = true
-                };
             }
 
             var formats = new List<YoutubeVideoFormat>(something.Formats.Count);
@@ -235,7 +231,7 @@ namespace youtube_dl_gui
 
                 Action<YoutubeVideoFormat> handleData = (format) =>
                 {
-                    string formatName = GetFriendlyFormatExtension(format);
+                    string formatName = YoutubeVideoFormatComparer.GetFriendlyFormatExtension(format);
                     sb.Append(formatName);
                     sb.Append(" ");
                     bool hasAudio = (format.AudioCodec != null),
@@ -320,7 +316,7 @@ namespace youtube_dl_gui
 
             sfd.Filter = string.Join("|", formatStrings);
             sfd.Title = "Download '" + something.Title + "'";
-            sfd.FileName = this.regex_InvalidPathCharacters.Replace(something.Title + "-" + something.VideoID, "-");
+            sfd.FileName = this.regex_InvalidPathCharacters.Replace(something.Title + "-" + something.VideoID, "-").Normalize();
 
             if (sfd.ShowDialog(this) == true)
             {
@@ -347,212 +343,9 @@ namespace youtube_dl_gui
             }
         }
 
-        class YoutubeVideoFormatComparer : IComparer<YoutubeVideoFormat>
-        {
-            class RevertYoutubeVideoFormatComparer : YoutubeVideoFormatComparer
-            {
-                internal RevertYoutubeVideoFormatComparer() : base() { }
-
-                public override int Compare(YoutubeVideoFormat left, YoutubeVideoFormat right) => -base.Compare(left, right);
-            }
-            public static readonly YoutubeVideoFormatComparer Default = new YoutubeVideoFormatComparer();
-            public static readonly YoutubeVideoFormatComparer Revert = new RevertYoutubeVideoFormatComparer();
-
-            private YoutubeVideoFormatComparer() { }
-
-            public virtual int Compare(YoutubeVideoFormat left, YoutubeVideoFormat right)
-            {
-                bool left_hasVideo = (left.VideoCodec != null),
-                    right_hasVideo = (right.VideoCodec != null);
-
-                if (GetFriendlyFormatExtension(left) == GetFriendlyFormatExtension(right))
-                {
-                    if (left_hasVideo && right_hasVideo)
-                    {
-                        double left_height = left.VideoResolution.Height,
-                            right_height = right.VideoResolution.Height;
-
-                        if (left_height == right_height)
-                        {
-                            int leftFPS = left.FPS.HasValue ? left.FPS.Value : 30,
-                                rightFPS = right.FPS.HasValue ? right.FPS.Value : 30;
-                            if (leftFPS == rightFPS)
-                            {
-                                int left_priority = GetFormatPriority(left),
-                                    right_priority = GetFormatPriority(right);
-                                if (left_priority == right_priority)
-                                {
-                                    return 0;
-                                }
-                                else if (left_priority > right_priority)
-                                {
-                                    return 1;
-                                }
-                                else
-                                {
-                                    return -1;
-                                }
-                            }
-                            else if (leftFPS > rightFPS)
-                            {
-                                return 1;
-                            }
-                            else
-                            {
-                                return -1;
-                            }
-                        }
-                        else if (left_height > right_height)
-                        {
-                            return 1;
-                        }
-                        else
-                        {
-                            return -1;
-                        }
-                    }
-                    else if (!left_hasVideo && !right_hasVideo)
-                    {
-                        int left_audiobitrate = left.AudioBirate.Value,
-                            right_audiobitrate = right.AudioBirate.Value;
-
-                        if (left_audiobitrate == right_audiobitrate)
-                        {
-                            int left_priority = GetFormatPriority(left),
-                              right_priority = GetFormatPriority(right);
-                            if (left_priority == right_priority)
-                            {
-                                return 0;
-                            }
-                            else if (left_priority > right_priority)
-                            {
-                                return 1;
-                            }
-                            else
-                            {
-                                return -1;
-                            }
-                        }
-                        else if (left_audiobitrate > right_audiobitrate)
-                        {
-                            return 1;
-                        }
-                        else
-                        {
-                            return -1;
-                        }
-                    }
-                    else
-                    {
-                        if (left_hasVideo)
-                        {
-                            return 1;
-                        }
-                        else
-                        {
-                            return -1;
-                        }
-                    }
-                }
-                else
-                {
-                    int left_priority = GetFormatPriority(left),
-                        right_priority = GetFormatPriority(right);
-                    if (left_priority == right_priority)
-                    {
-                        return 0;
-                    }
-                    else if (left_priority > right_priority)
-                    {
-                        return 1;
-                    }
-                    else
-                    {
-                        return -1;
-                    }
-                }
-            }
-        }
-
-        static int GetFormatPriority(YoutubeVideoFormat format)
-        {
-            string formatString = format.VideoCodec ?? format.AudioCodec;
-            if (formatString.Equals("opus", StringComparison.OrdinalIgnoreCase))
-            {
-                return -3;
-            }
-            else if (formatString.Equals("vorbis", StringComparison.OrdinalIgnoreCase))
-            {
-                return -5;
-            }
-            else if (formatString.Equals("vp9", StringComparison.OrdinalIgnoreCase))
-            {
-                return 0;
-            }
-            else if (formatString.Equals("vp8.0", StringComparison.OrdinalIgnoreCase) || formatString.Equals("vp8", StringComparison.OrdinalIgnoreCase))
-            {
-                return -2;
-            }
-            else if (formatString.StartsWith("avc1", StringComparison.OrdinalIgnoreCase))
-            {
-                return -1;
-            }
-            else if (formatString.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
-            {
-                return -4;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-
-        static string GetFriendlyFormatExtension(YoutubeVideoFormat format)
-        {
-            string formatString = format.VideoCodec ?? format.AudioCodec;
-            if (formatString.Equals("opus", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Opus";
-            }
-            else if (formatString.Equals("vorbis", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Vorbis";
-            }
-            else if (formatString.Equals("vp9", StringComparison.OrdinalIgnoreCase))
-            {
-                return "VP9";
-            }
-            else if (formatString.Equals("vp8.0", StringComparison.OrdinalIgnoreCase) || formatString.Equals("vp8", StringComparison.OrdinalIgnoreCase))
-            {
-                return "VP8";
-            }
-            else if (formatString.StartsWith("avc1", StringComparison.OrdinalIgnoreCase))
-            {
-                return "H264";
-            }
-            else if (formatString.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
-            {
-                return "M4A";
-            }
-            else
-            {
-                return FirstLetterToUpper(formatString);
-            }
-        }
-
-        public static string FirstLetterToUpper(string str)
-        {
-            if (str == null)
-                return null;
-
-            if (str.Length > 1)
-                return char.ToUpper(str[0]) + str.Substring(1);
-
-            return str.ToUpper();
-        }
-
         private void Session_DownloadCompleted(object sender, DownloadCompletedEventArgs e)
         {
+            currentDownloadSession.Dispose();
             currentDownloadSession = null;
             if (!e.Cancelled)
             {
