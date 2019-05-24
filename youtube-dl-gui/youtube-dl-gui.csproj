@@ -62,9 +62,23 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Controls\PlaceholderTextbox.xaml.cs">
+      <DependentUpon>PlaceholderTextbox.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\ProgressBarButton.xaml.cs">
+      <DependentUpon>ProgressBarButton.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Experiments.cs" />
     <Compile Include="YoutubeDL.cs" />
     <Compile Include="YoutubeVideoFormatComparer.cs" />
+    <Page Include="Controls\PlaceholderTextbox.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Controls\ProgressBarButton.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

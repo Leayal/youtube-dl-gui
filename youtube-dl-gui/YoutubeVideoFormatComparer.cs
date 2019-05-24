@@ -135,31 +135,35 @@ namespace youtube_dl_gui
             string formatString = format.VideoCodec ?? format.AudioCodec;
             if (formatString.Equals("opus", StringComparison.OrdinalIgnoreCase))
             {
-                return -3;
+                return -4;
             }
             else if (formatString.Equals("vorbis", StringComparison.OrdinalIgnoreCase))
             {
-                return -5;
+                return -6;
             }
             else if (formatString.Equals("vp9", StringComparison.OrdinalIgnoreCase))
             {
-                return 0;
+                return -1;
             }
             else if (formatString.Equals("vp8.0", StringComparison.OrdinalIgnoreCase) || formatString.Equals("vp8", StringComparison.OrdinalIgnoreCase))
             {
-                return -2;
+                return -3;
             }
             else if (formatString.StartsWith("avc1", StringComparison.OrdinalIgnoreCase))
             {
-                return -1;
+                return -2;
+            }
+            else if (formatString.StartsWith("av01", StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
             }
             else if (formatString.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
             {
-                return -4;
+                return -5;
             }
             else
             {
-                return 0;
+                return 1;
             }
         }
 
@@ -185,6 +189,10 @@ namespace youtube_dl_gui
             else if (formatString.StartsWith("avc1", StringComparison.OrdinalIgnoreCase))
             {
                 return "H264";
+            }
+            else if (formatString.StartsWith("av01", StringComparison.OrdinalIgnoreCase))
+            {
+                return "AV1";
             }
             else if (formatString.StartsWith("mp4a", StringComparison.OrdinalIgnoreCase))
             {

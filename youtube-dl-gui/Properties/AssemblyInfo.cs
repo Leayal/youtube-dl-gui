@@ -8,7 +8,7 @@ using System.Windows;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("youtube-dl-gui")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("GUI for youtube-dl CLI")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("youtube-dl-gui")]

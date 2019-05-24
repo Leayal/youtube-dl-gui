@@ -91,7 +91,18 @@ namespace youtube_dl_gui.Youtube
         /// </summary>
         /// <param name="format">The video format of <seealso cref="YoutubeVideoInfo"/></param>
         /// <returns></returns>
-        public VideoDownloadSession PrepareVideoDownload(YoutubeVideoFormat format) => new VideoDownloadSession(this, format);
+        public VideoDownloadSession PrepareVideoDownload(YoutubeVideoFormat format)
+        {
+            if (format == null)
+            {
+                throw new ArgumentNullException(nameof(format));
+            }
+            if (format.VideoInfo.IsLiveStream)
+            {
+                throw new NotSupportedException();
+            }
+            return new VideoDownloadSession(this, format);
+        }
     }
 
     class VideoDownloadSession : IDisposable
@@ -155,7 +166,7 @@ namespace youtube_dl_gui.Youtube
                         this.myformat.FormatID,
                         "--output",
                         outputFile,
-                        myformat.sourceInfo.VideoHomepage.OriginalString
+                        myformat.VideoInfo.VideoHomepage.OriginalString
                     }))
                     {
                         UseShellExecute = false,
@@ -329,11 +340,11 @@ namespace youtube_dl_gui.Youtube
 
         public Uri DirectLink { get; }
 
-        internal readonly YoutubeVideoInfo sourceInfo;
+        public YoutubeVideoInfo VideoInfo { get; }
 
         public YoutubeVideoFormat(YoutubeVideoInfo source, JToken data)
         {
-            this.sourceInfo = source;
+            this.VideoInfo = source;
             this.FileExtension = data.Value<string>("ext");
             this.FormatID = data.Value<string>("format_id");
             this.FormatNote = data.Value<string>("format_note");

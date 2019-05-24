@@ -5,6 +5,7 @@
                       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
                       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                       xmlns:local="clr-namespace:youtube_dl_gui"
+                      xmlns:controls="clr-namespace:youtube_dl_gui.Controls"
                       mc:Ignorable="d"
                       Title="User Interface for youtube-dl" Height="480" Width="640" SizeToContent="Height" Loaded="MetroWindow_Loaded" x:Name="myself" TitleCaps="False" ResizeMode="CanMinimize">
     <Grid Margin="2">
@@ -48,7 +49,8 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <Label Content="Youtube link:" />
-                                <TextBox Grid.Column="1" x:Name="TextBoxYoutubeLink" KeyUp="TextBoxYoutubeLink_KeyUp" />
+                                <controls:PlaceholderTextbox Grid.Column="1" x:Name="TextBoxYoutubeLink" Placeholder="Paste youtube link here" KeyUp="TextBoxYoutubeLink_KeyUp" />
+                                <!--<TextBox Grid.Column="1" x:Name="TextBoxYoutubeLink" KeyUp="TextBoxYoutubeLink_KeyUp" />-->
                                 <Button Grid.Column="2" Content="Download" Click="ButtonYoutubeLink_Click" IsEnabled="{Binding ElementName=TextBoxYoutubeLink,Path=Text,Mode=OneWay,Converter={StaticResource EmptyStringConverter}}" mahapps:ButtonHelper.PreserveTextCase="True" />
                             </Grid>
                         </GroupBox>
@@ -61,19 +63,10 @@
                             </Grid.RowDefinitions>
                             <TextBlock TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDownloadingText}" />
                             <mahapps:ProgressRing Grid.Row="1" mahapps:VisibilityHelper.IsVisible="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloadingIndeterminate}" />
-                            <Border Grid.Row="1" mahapps:VisibilityHelper.IsCollapsed="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloadingIndeterminate}" BorderBrush="White" BorderThickness="1" CornerRadius="3" PreviewMouseDown="ButtonCancelDownload_Click" PreviewMouseUp="ButtonCancelDownload_Click">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition  Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <mahapps:MetroProgressBar Value="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDownloadingProgress}" Padding="1" />
-                                    <TextBlock Text="Cancel Download" TextAlignment="Center" VerticalAlignment="Center" />
-                                    <!--<Button Content="Cancel Download" Click="ButtonCancelDownload_Click" Background="Transparent" mahapps:ButtonHelper.PreserveTextCase="True" />-->
-                                </Grid>
-                            </Border>
+                            <controls:ProgressBarButton Grid.Row="1" mahapps:VisibilityHelper.IsCollapsed="{Binding ElementName=myself,Mode=OneWay,Path=IsYoutubeDownloadingIndeterminate}" BorderBrush="White" BorderThickness="2" CornerRadius="4"
+                                                        Text="Cancel Download" TextAlignment="Center" VerticalAlignment="Center"
+                                                        ProgressValue="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDownloadingProgress}"
+                                                        Click="ProgressBarButton_Click"/>
                         </Grid>
                     </mahapps:MetroTabItem>
                 </mahapps:MetroAnimatedTabControl>
