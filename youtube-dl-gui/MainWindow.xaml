@@ -22,7 +22,6 @@
         <Label Content="Tool path:" />
         <TextBox Grid.Column="1" IsEnabled="{Binding ElementName=myself,Mode=OneWay,Path=IsInStartUp,Converter={StaticResource InverseBooleanConverter}}" Text="{Binding ElementName=myself,Mode=OneWay,Path=YoutubeDLPath}" IsReadOnly="True" IsReadOnlyCaretVisible="True" />
         <Button Grid.Column="2" Content="Browse" IsEnabled="{Binding ElementName=myself,Mode=OneWay,Path=IsToolBrowseAvailable}" Click="ButtonBrowseTool_Click" mahapps:ButtonHelper.PreserveTextCase="True" />
-
         <mahapps:MetroAnimatedTabControl Grid.Row="1" Grid.ColumnSpan="3">
             <mahapps:MetroTabItem Visibility="Collapsed" IsSelected="{Binding ElementName=myself,Mode=OneWay,Path=IsInStartUp}">
                 <Grid HorizontalAlignment="Center" VerticalAlignment="Center">

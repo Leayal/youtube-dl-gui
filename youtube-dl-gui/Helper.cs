@@ -12,13 +12,17 @@ namespace youtube_dl_gui
     {
         public static string FirstLetterToUpper(this string str)
         {
-            if (str == null)
-                return null;
+            if (string.IsNullOrWhiteSpace(str))
+                return str;
 
-            if (str.Length > 1)
+            if (str.Length == 1)
+            {
+                return str.ToUpper();
+            }
+            else
+            {
                 return char.ToUpper(str[0]) + str.Substring(1);
-
-            return str.ToUpper();
+            }
         }
         public static string GetArg(IEnumerable<string> args)
         {
@@ -26,23 +30,26 @@ namespace youtube_dl_gui
             bool firstAppend = true;
             foreach (string str in args)
             {
-                if (firstAppend)
+                if (!string.IsNullOrEmpty(str))
                 {
-                    firstAppend = false;
-                }
-                else
-                {
-                    sb.Append(' ');
-                }
-                if (str.IndexOf(' ') == -1)
-                {
-                    sb.Append(str);
-                }
-                else
-                {
-                    sb.Append('"');
-                    sb.Append(str);
-                    sb.Append('"');
+                    if (firstAppend)
+                    {
+                        firstAppend = false;
+                    }
+                    else
+                    {
+                        sb.Append(' ');
+                    }
+                    if (str.IndexOf(' ') == -1)
+                    {
+                        sb.Append(str);
+                    }
+                    else
+                    {
+                        sb.Append('"');
+                        sb.Append(str);
+                        sb.Append('"');
+                    }
                 }
             }
             return sb.ToString();
@@ -175,7 +182,15 @@ namespace youtube_dl_gui
                 }
                 proc.Dispose();
             };
-            proc.Start();
+            try
+            {
+                proc.Start();
+            }
+            catch (Exception ex)
+            {
+                tasksrc.SetException(ex);
+                proc.Dispose();
+            }
             return tasksrc.Task;
         }
     }

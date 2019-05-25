@@ -7,29 +7,76 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Threading;
-using System.Collections.Concurrent;
+using System.IO;
 
 namespace youtube_dl_gui.Youtube
 {
-    class YoutubeDL
+    public class YoutubeDL
     {
         public string YoutubeDLPath { get; set; }
 
+        public Task<string> GetCLIVersion()
+        {
+            string youtube_tool = this.YoutubeDLPath;
+            if (string.IsNullOrWhiteSpace(youtube_tool))
+                throw new FileNotFoundException();
+
+            TaskCompletionSource<string> src = new TaskCompletionSource<string>();
+            Process proc = new Process()
+            {
+                StartInfo = new ProcessStartInfo(youtube_tool, "--version")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true,
+                },
+                EnableRaisingEvents = true
+            };
+            proc.Exited += (sender, e) =>
+            {
+                string data = proc.StandardOutput.ReadToEnd();
+                if (string.IsNullOrWhiteSpace(data))
+                {
+                    src.SetException(new NullReferenceException());
+                }
+                else
+                {
+                    src.SetResult(data.Trim());
+                }
+                proc.Dispose();
+            };
+            try
+            {
+                proc.Start();
+            }
+            catch (Exception ex)
+            {
+                src.SetException(ex);
+                proc.Dispose();
+            }
+
+            return src.Task;
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="youtubelink"></param>
+        /// <exception cref="FileNotFoundException">The CLI path is not specified.</exception>
         public Task<YoutubeVideoInfo> GetYoutubeVideoInformationAsync(string youtubelink)
         {
             string youtube_tool = this.YoutubeDLPath;
             if (string.IsNullOrWhiteSpace(youtube_tool))
-                throw new InvalidOperationException();
+                throw new FileNotFoundException();
             return Task.Run(() =>
             {
-                Process proc = new Process()
+                using (Process proc = new Process()
                 {
                     StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(new string[] {
-                        "--quiet",
                         "--no-warnings",
                         "--simulate",
                         "--no-call-home",
-                        "--print-json",
+                        "--dump-json",
                         youtubelink
                     }))
                     {
@@ -38,32 +85,31 @@ namespace youtube_dl_gui.Youtube
                         RedirectStandardError = true,
                         CreateNoWindow = true,
                     }
-                };
-
-                JsonTextReader jtr = null;
-                JObject obj = null;
-
-                proc.Start();
-
-                try
+                })
                 {
-                    jtr = new JsonTextReader(proc.StandardOutput) { CloseInput = true };
-                    obj = JObject.Load(jtr);
-                }
-                finally
-                {
-                    if (jtr != null)
+                    JsonTextReader jtr = null;
+                    JObject obj = null;
+
+                    proc.Start();
+
+                    try
                     {
-                        jtr.Close();
+                        jtr = new JsonTextReader(proc.StandardOutput) { CloseInput = true };
+                        obj = JObject.Load(jtr);
                     }
-                    if (!proc.HasExited)
-                        proc.Kill();
-                    proc.WaitForExit(5000);
+                    finally
+                    {
+                        if (jtr != null)
+                        {
+                            jtr.Close();
+                        }
+                        if (!proc.HasExited)
+                            proc.Kill();
+                        proc.WaitForExit(5000);
+                    }
+
+                    return new YoutubeVideoInfo(obj);
                 }
-                proc.Dispose();
-
-                return new YoutubeVideoInfo(obj);
-
             });
         }
 
@@ -97,15 +143,11 @@ namespace youtube_dl_gui.Youtube
             {
                 throw new ArgumentNullException(nameof(format));
             }
-            if (format.VideoInfo.IsLiveStream)
-            {
-                throw new NotSupportedException();
-            }
             return new VideoDownloadSession(this, format);
         }
     }
 
-    class VideoDownloadSession : IDisposable
+    public class VideoDownloadSession : IDisposable
     {
         const string Progress_DownloadText = "[download]";
 
@@ -144,6 +186,7 @@ namespace youtube_dl_gui.Youtube
         /// </summary>
         /// <param name="outputFile">The destination to download video to.</param>
         /// <exception cref="InvalidOperationException">The download has already been started.</exception>
+        /// <exception cref="System.IO.FileNotFoundException">The CLI path is not specified.</exception>
         public void StartDownload(string outputFile)
         {
             int currentState = Interlocked.CompareExchange(ref this.state, 1, 0);
@@ -151,11 +194,12 @@ namespace youtube_dl_gui.Youtube
             {
                 string youtube_tool = this._tool.YoutubeDLPath;
                 if (string.IsNullOrWhiteSpace(youtube_tool))
-                    throw new InvalidOperationException();
+                    throw new System.IO.FileNotFoundException();
                 Task.Run(() =>
                 {
                     Exception myex = null;
-                    proc.StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(new string[]
+                    
+                    string[] defaultArgs = new string[]
                     {
                         "--no-warnings",
                         "--newline",
@@ -167,7 +211,20 @@ namespace youtube_dl_gui.Youtube
                         "--output",
                         outputFile,
                         myformat.VideoInfo.VideoHomepage.OriginalString
-                    }))
+                    };
+
+                    IEnumerable<string> myparams;
+                    if (string.Equals(this.myformat.Protocol, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) || string.Equals(this.myformat.Protocol, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+                    {
+                        myparams = defaultArgs;
+                    }
+                    else
+                    {
+                        var paramlist = new List<string>(defaultArgs.Length + 1);
+                        paramlist.Add("--hls-use-mpegts");
+                        myparams = paramlist;
+                    }
+                    proc.StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(myparams))
                     {
                         UseShellExecute = false,
                         RedirectStandardOutput = true,
@@ -175,7 +232,9 @@ namespace youtube_dl_gui.Youtube
                         CreateNoWindow = true,
                     };
 
+                    // Let user catch Exception
                     proc.Start();
+
                     try
                     {
                         string eachline = proc.StandardOutput.ReadLine();
@@ -229,7 +288,7 @@ namespace youtube_dl_gui.Youtube
         public void Dispose() => this.proc.Dispose();
     }
 
-    class DownloadCompletedEventArgs : EventArgs
+    public class DownloadCompletedEventArgs : EventArgs
     {
         public Exception Error { get; }
         public string DownloadDestination { get; }
@@ -249,7 +308,7 @@ namespace youtube_dl_gui.Youtube
         }
     }
 
-    class YoutubeVideoInfo
+    public class YoutubeVideoInfo
     {
         public string VideoID { get; }
         public string Title { get; }
@@ -320,13 +379,14 @@ namespace youtube_dl_gui.Youtube
         public IReadOnlyList<YoutubeVideoFormat> Formats { get; }
     }
 
-    class YoutubeVideoFormat
+    public class YoutubeVideoFormat
     {
         public string FormatName { get; }
         public string FileExtension { get; }
         public string FormatID { get; }
         public string FormatNote { get; }
         public int? AudioBirate { get; }
+        public int? AudioSampleRate { get; }
         public double Bitrate { get; }
 
         public string VideoCodec { get; }
@@ -334,7 +394,7 @@ namespace youtube_dl_gui.Youtube
 
         public string Protocol { get; }
 
-        public long FileSize { get; }
+        public long? FileSize { get; }
         public int? FPS { get; }
         public System.Windows.Size VideoResolution { get; }
 
@@ -358,6 +418,7 @@ namespace youtube_dl_gui.Youtube
             }
             else
             {
+                this.AudioSampleRate = data.Value<int?>("asr");
                 this.AudioCodec = tmp_str;
             }
 
@@ -370,7 +431,7 @@ namespace youtube_dl_gui.Youtube
             else
             {
                 int? int_width = data.Value<int?>("width"),
-                int_height = data.Value<int?>("height");
+                    int_height = data.Value<int?>("height");
 
                 this.VideoResolution = new System.Windows.Size(int_width.HasValue ? int_width.Value : 0, int_height.HasValue ? int_height.Value : 0);
 
@@ -390,7 +451,7 @@ namespace youtube_dl_gui.Youtube
                 this.DirectLink = new Uri(tmp_str);
             }
 
-            this.FileSize = data.Value<long>("filesize");
+            this.FileSize = data.Value<long?>("filesize");
         }
     }
 }

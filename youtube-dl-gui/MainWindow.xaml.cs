@@ -23,13 +23,7 @@ namespace youtube_dl_gui
     {
         const string ToolFilename = "youtube-dl.exe";
 
-        private static readonly DependencyPropertyKey YoutubeDLPathProperty = DependencyProperty.RegisterReadOnly("YoutubeDLPath", typeof(string), typeof(MainWindow), new PropertyMetadata(null, (obj, e) =>
-        {
-            if (obj is MainWindow mymainwindow)
-            {
-                mymainwindow.youtubeTool.YoutubeDLPath = (string)e.NewValue;
-            }
-        }));
+        private static readonly DependencyPropertyKey YoutubeDLPathProperty = DependencyProperty.RegisterReadOnly("YoutubeDLPath", typeof(string), typeof(MainWindow), new PropertyMetadata(null));
         public string YoutubeDLPath => (string)this.GetValue(YoutubeDLPathProperty.DependencyProperty);
 
         private static readonly DependencyPropertyKey IsYoutubeDownloadingProperty = DependencyProperty.RegisterReadOnly("IsYoutubeDownloading", typeof(bool), typeof(MainWindow), new PropertyMetadata(false));
@@ -127,30 +121,46 @@ namespace youtube_dl_gui
             try
             {
                 string youtubePath = await where_youtubedl;
-                this.StartUp(youtubePath);
+                await this.StartUp(youtubePath);
             }
             catch (FileNotFoundException)
             {
-                this.StartUp(null);
+                await this.StartUp(null);
             }
         }
 
-        private void StartUp(string youtubePath)
+        private async Task StartUp(string youtubePath)
         {
             if (string.IsNullOrEmpty(youtubePath))
             {
                 this.SetValue(StarUpTextProperty, $"Cannot find '{ToolFilename}'.\nPlease browse for '{ToolFilename}' tool manually.");
                 this.SetValue(IsInStartUpProperty, true);
+                this.Title = "User Interface for youtube-dl";
             }
             else
             {
-                this.SetValue(YoutubeDLPathProperty, youtubePath);
-                this.SetValue(IsInStartUpProperty, false);
+                var oldPath = this.youtubeTool.YoutubeDLPath;
+                this.youtubeTool.YoutubeDLPath = youtubePath;
+                try
+                {
+                    string version = await this.youtubeTool.GetCLIVersion();
+                    this.SetValue(YoutubeDLPathProperty, youtubePath);
+                    this.SetValue(IsInStartUpProperty, false);
+                    this.Title = "User Interface for youtube-dl (v" + version + ")";
+                    oldPath = null;
+                }
+                catch
+                {
+                    this.youtubeTool.YoutubeDLPath = oldPath;
+                    this.SetValue(StarUpTextProperty, $"Cannot find '{ToolFilename}'.\nPlease browse for '{ToolFilename}' tool manually.");
+                    this.SetValue(IsInStartUpProperty, true);
+                    this.Title = "User Interface for youtube-dl";
+                }
             }
             this.SetValue(IsToolBrowseAvailableProperty, true);
         }
 
-        private void ButtonBrowseTool_Click(object sender, RoutedEventArgs e)
+        private async void ButtonBrowseTool_Click(object sender, RoutedEventArgs e)
         {
             string oldPath = this.YoutubeDLPath;
             if (ofd == null)
@@ -172,7 +182,7 @@ namespace youtube_dl_gui
             if (ofd.ShowDialog(this) == true)
             {
                 this.registry.SetValue("ExePath", ofd.FileName, RegistryValueKind.String);
-                this.StartUp(ofd.FileName);
+                await this.StartUp(ofd.FileName);
             }
         }
 
@@ -205,76 +215,76 @@ namespace youtube_dl_gui
                 this.cache_youtubeinfo.Add(youtubeurl, something);
             }
 
-            if (something.IsLiveStream)
+            var formatStrings = new List<string>(something.Formats.Count + 1);
+            Dictionary<string, YoutubeVideoFormat> filterData = new Dictionary<string, YoutubeVideoFormat>(StringComparer.OrdinalIgnoreCase);
+
+            await Task.Run(() =>
             {
-                MessageBox.Show(this, "Live stream download is not supported yet.", "Not supported", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                StringBuilder sb = new StringBuilder(160);
+                List<YoutubeVideoFormat> audioOnly = new List<YoutubeVideoFormat>(),
+                    videoOnly = new List<YoutubeVideoFormat>(),
+                    video = new List<YoutubeVideoFormat>();
 
-                sfd.Filter = "MPEG Transport Stream (*.ts)|*.ts";
-                sfd.Title = "Download '" + something.Title + "'";
-                sfd.FileName = this.regex_InvalidPathCharacters.Replace(something.Title + "-" + something.VideoID, "-").Normalize();
-
-                if (sfd.ShowDialog(this) == true)
+                for (int i = 0; i < something.Formats.Count; i++)
                 {
-                    this.Session_ProgressChanged(null, 0);
-                    this.SetValue(IsYoutubeDownloadingIndeterminateProperty, false);
-                    this.SetValue(YoutubeDownloadingTextProperty, $"Downloading: MPEG-TS\nTo: {sfd.FileName}");
-                    currentDownloadSession = this.youtubeTool.PrepareVideoDownload(null);
-                    currentDownloadSession.ProgressChanged += Session_ProgressChanged;
-                    currentDownloadSession.DownloadCompleted += Session_DownloadCompleted;
-                    currentDownloadSession.StartDownload(sfd.FileName);
-                }
-                else
-                {
-                    this.SetValue(IsYoutubeDownloadingProperty, false);
-                }
-            }
-            else
-            {
-                var formatStrings = new List<string>(something.Formats.Count + 1);
-                Dictionary<string, YoutubeVideoFormat> filterData = new Dictionary<string, YoutubeVideoFormat>(StringComparer.OrdinalIgnoreCase);
-
-                await Task.Run(() =>
-                {
-                    StringBuilder sb = new StringBuilder(160);
-                    List<YoutubeVideoFormat> audioOnly = new List<YoutubeVideoFormat>(),
-                        videoOnly = new List<YoutubeVideoFormat>(),
-                        video = new List<YoutubeVideoFormat>();
-
-                    for (int i = 0; i < something.Formats.Count; i++)
+                    var format = something.Formats[i];
+                    bool hasAudio = !string.IsNullOrEmpty(format.AudioCodec),
+                        hasVideo = !string.IsNullOrEmpty(format.VideoCodec);
+                    if (hasAudio && hasVideo)
                     {
-                        var format = something.Formats[i];
-                        bool hasAudio = !string.IsNullOrEmpty(format.AudioCodec),
-                            hasVideo = !string.IsNullOrEmpty(format.VideoCodec);
-                        if (hasAudio && hasVideo)
+                        video.Add(format);
+                    }
+                    else
+                    {
+                        if (hasVideo)
                         {
-                            video.Add(format);
+                            videoOnly.Add(format);
                         }
                         else
                         {
-                            if (hasVideo)
-                            {
-                                videoOnly.Add(format);
-                            }
-                            else
-                            {
-                                audioOnly.Add(format);
-                            }
+                            audioOnly.Add(format);
                         }
                     }
-                    audioOnly.Sort(YoutubeVideoFormatComparer.Revert);
-                    videoOnly.Sort(YoutubeVideoFormatComparer.Revert);
-                    video.Sort(YoutubeVideoFormatComparer.Revert);
+                }
+                audioOnly.Sort(YoutubeVideoFormatComparer.Revert);
+                videoOnly.Sort(YoutubeVideoFormatComparer.Revert);
+                video.Sort(YoutubeVideoFormatComparer.Revert);
 
-                    Action<YoutubeVideoFormat> handleData = (format) =>
+                Action<YoutubeVideoFormat> handleData = (format) =>
+                {
+                    string formatName = YoutubeVideoFormatComparer.GetFriendlyFormatExtension(format);
+                    sb.Append(formatName);
+                    sb.Append(" ");
+                    bool hasAudio = (format.AudioCodec != null),
+                        hasVideo = (format.VideoCodec != null);
+                    if (hasVideo && hasAudio)
                     {
-                        string formatName = YoutubeVideoFormatComparer.GetFriendlyFormatExtension(format);
-                        sb.Append(formatName);
-                        sb.Append(" ");
-                        bool hasAudio = (format.AudioCodec != null),
-                            hasVideo = (format.VideoCodec != null);
-                        if (hasVideo && hasAudio)
+                        var theHeight = format.VideoResolution.Height;
+                        if (theHeight == 0)
                         {
+                            sb.Append(format.FormatNote);
+                        }
+                        else
+                        {
+                            sb.Append(theHeight);
+                            sb.Append("p");
+                            if (format.FPS.HasValue && format.FPS.Value != 30)
+                                sb.Append(format.FPS.Value);
+                        }
+
+                        sb.Append(" Video");
+                    }
+                    else
+                    {
+                        if (hasAudio)
+                        {
+                            // Audio only
+                            sb.Append(format.AudioBirate);
+                            sb.Append("k [Audio Only]");
+                        }
+                        else
+                        {
+                            // Video only
                             var theHeight = format.VideoResolution.Height;
                             if (theHeight == 0)
                             {
@@ -287,36 +297,12 @@ namespace youtube_dl_gui
                                 if (format.FPS.HasValue && format.FPS.Value != 30)
                                     sb.Append(format.FPS.Value);
                             }
-
-                            sb.Append(" Video");
+                            sb.Append(" [Video Only]");
                         }
-                        else
-                        {
-                            if (hasAudio)
-                            {
-                                // Audio only
-                                sb.Append(format.AudioBirate);
-                                sb.Append("k [Audio Only]");
-                            }
-                            else
-                            {
-                                // Video only
-                                var theHeight = format.VideoResolution.Height;
-                                if (theHeight == 0)
-                                {
-                                    sb.Append(format.FormatNote);
-                                }
-                                else
-                                {
-                                    sb.Append(theHeight);
-                                    sb.Append("p");
-                                    if (format.FPS.HasValue && format.FPS.Value != 30)
-                                        sb.Append(format.FPS.Value);
-                                }
-                                sb.Append(" [Video Only]");
-                            }
-                        }
+                    }
 
+                    if (string.Equals(format.Protocol, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) || string.Equals(format.Protocol, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+                    {
                         if (formatName == "Vorbis")
                         {
                             sb.Append(" (*.ogg)|*.ogg");
@@ -336,49 +322,70 @@ namespace youtube_dl_gui
                             sb.Append(")|*.");
                             sb.Append(format.FileExtension);
                         }
-
-                        string filterName = sb.ToString();
-                        sb.Clear();
-                        formatStrings.Add(filterName);
-                        filterData[filterName] = format;
-                    };
-
-                    foreach (var format in video)
-                        handleData(format);
-                    foreach (var format in videoOnly)
-                        handleData(format);
-                    foreach (var format in audioOnly)
-                        handleData(format);
-                });
-
-                sfd.Filter = string.Join("|", formatStrings);
-                sfd.Title = "Download '" + something.Title + "'";
-                sfd.FileName = this.regex_InvalidPathCharacters.Replace(something.Title + "-" + something.VideoID, "-").Normalize();
-
-                if (sfd.ShowDialog(this) == true)
-                {
-                    string formatString = formatStrings[sfd.FilterIndex - 1];
-                    if (filterData.TryGetValue(formatString, out var selectedFormat))
-                    {
-                        this.Session_ProgressChanged(null, 0);
-                        this.SetValue(IsYoutubeDownloadingIndeterminateProperty, false);
-                        this.SetValue(YoutubeDownloadingTextProperty, $"Downloading: {formatString}\nTo: {sfd.FileName}");
-                        currentDownloadSession = this.youtubeTool.PrepareVideoDownload(selectedFormat);
-                        // selectedFormat.AudioBirate
-                        currentDownloadSession.ProgressChanged += Session_ProgressChanged;
-                        currentDownloadSession.DownloadCompleted += Session_DownloadCompleted;
-                        currentDownloadSession.StartDownload(sfd.FileName);
                     }
                     else
                     {
+                        sb.Append(" (*ts).|*.ts");
+                    }
+
+                    string filterName = sb.ToString();
+                    sb.Clear();
+                    formatStrings.Add(filterName);
+                    filterData[filterName] = format;
+                };
+
+                foreach (var format in video)
+                    handleData(format);
+                foreach (var format in videoOnly)
+                    handleData(format);
+                foreach (var format in audioOnly)
+                    handleData(format);
+            });
+
+            sfd.Filter = string.Join("|", formatStrings);
+            sfd.Title = "Download '" + something.Title + "'";
+            sfd.FileName = this.regex_InvalidPathCharacters.Replace(something.Title + "-" + something.VideoID, "-").Normalize();
+
+            if (sfd.ShowDialog(this) == true)
+            {
+                string formatString = formatStrings[sfd.FilterIndex - 1];
+                if (filterData.TryGetValue(formatString, out var selectedFormat))
+                {
+                    this.Session_ProgressChanged(null, 0);
+                    this.SetValue(IsYoutubeDownloadingIndeterminateProperty, false);
+                    if (string.Equals(selectedFormat.Protocol, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) || string.Equals(selectedFormat.Protocol, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+                    {
+                        this.SetValue(YoutubeDownloadingTextProperty, $"Downloading: {formatString}\nTo: {sfd.FileName}");
+                    }
+                    else
+                    {
+                        this.SetValue(YoutubeDownloadingTextProperty, $"Streaming: {formatString}\nTo: {sfd.FileName}");
+                    }
+                    currentDownloadSession = this.youtubeTool.PrepareVideoDownload(selectedFormat);
+                    currentDownloadSession.ProgressChanged += Session_ProgressChanged;
+                    currentDownloadSession.DownloadCompleted += Session_DownloadCompleted;
+                    try
+                    {
+                        currentDownloadSession.StartDownload(sfd.FileName);
+                    }
+                    catch (Exception ex)
+                    {
+                        currentDownloadSession.Dispose();
+                        currentDownloadSession = null;
                         this.SetValue(IsYoutubeDownloadingProperty, false);
-                        MessageBox.Show(this, "Unknown error occured.", "Error", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                        MessageBox.Show(this, ex.ToString(), "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
                 else
                 {
                     this.SetValue(IsYoutubeDownloadingProperty, false);
+                    this.cache_youtubeinfo.Remove(youtubeurl);
+                    MessageBox.Show(this, "Unknown error occured. Please try again after a moment.", "Error", MessageBoxButton.OK, MessageBoxImage.Exclamation);
                 }
+            }
+            else
+            {
+                this.SetValue(IsYoutubeDownloadingProperty, false);
             }
         }
 

@@ -68,6 +68,12 @@
     <Compile Include="Controls\ProgressBarButton.xaml.cs">
       <DependentUpon>ProgressBarButton.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Controls\SelectiveButtonPanel.xaml.cs">
+      <DependentUpon>SelectiveButtonPanel.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\YoutubeVideoFormatViewModel.xaml.cs">
+      <DependentUpon>YoutubeVideoFormatViewModel.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Experiments.cs" />
     <Compile Include="YoutubeDL.cs" />
     <Compile Include="YoutubeVideoFormatComparer.cs" />
@@ -76,6 +82,14 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Controls\ProgressBarButton.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Controls\SelectiveButtonPanel.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Controls\YoutubeVideoFormatViewModel.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

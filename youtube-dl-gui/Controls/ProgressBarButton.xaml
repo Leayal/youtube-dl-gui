@@ -4,16 +4,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options" 
         xmlns:local="clr-namespace:youtube_dl_gui.Controls"
         mc:Ignorable="d" 
-        d:DesignHeight="450" d:DesignWidth="800" PreviewMouseDown="ButtonCancelDownload_Click" PreviewMouseUp="ButtonCancelDownload_Click"
+        d:DesignHeight="450" d:DesignWidth="800" PreviewMouseLeftButtonDown="ButtonCancelDownload_Click" PreviewMouseLeftButtonUp="ButtonCancelDownload_Click" MouseLeave="ButtonCancelDownload_MouseLeave"
         x:Name="myself">
-    <Border.Resources>
-        <ResourceDictionary>
-            <SolidColorBrush x:Key="highlight" Color="#59FFFFFF" po:Freeze="True" />
-        </ResourceDictionary>
-    </Border.Resources>
     <Grid>
         <mahapps:MetroProgressBar Padding="1" Maximum="{Binding ElementName=myself,Path=ProgressMaximum,Mode=OneWay,UpdateSourceTrigger=PropertyChanged}" Value="{Binding ElementName=myself,Path=ProgressValue,Mode=OneWay,UpdateSourceTrigger=PropertyChanged}" />
         <TextBlock Text="{Binding ElementName=myself,Path=Text,Mode=OneWay}" TextAlignment="{Binding ElementName=myself,Path=TextAlignment,Mode=OneWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" 
@@ -23,7 +17,7 @@
                     <Setter Property="Background" Value="Transparent" />
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding ElementName=myself,Path=IsMouseOver,Mode=OneWay}" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource highlight}" />
+                            <Setter Property="Background" Value="#4CFFFFFF" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>

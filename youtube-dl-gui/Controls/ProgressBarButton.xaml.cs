@@ -54,6 +54,11 @@ namespace youtube_dl_gui.Controls
             }
         }
 
+        private void ButtonCancelDownload_MouseLeave(object sender, MouseEventArgs e)
+        {
+            this.goforItLMB = false;
+        }
+
         public static readonly DependencyProperty ProgressValueProperty = DependencyProperty.Register("ProgressValue", typeof(double), typeof(ProgressBarButton), new PropertyMetadata(0d));
 
         public double ProgressValue
