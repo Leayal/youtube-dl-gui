@@ -13,6 +13,9 @@ using Microsoft.Win32;
 using System.Windows.Controls;
 using youtube_dl_gui.Youtube;
 using System.Text.RegularExpressions;
+using System.Net.Http;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace youtube_dl_gui
 {
@@ -41,12 +44,28 @@ namespace youtube_dl_gui
         private static readonly DependencyPropertyKey IsInStartUpProperty = DependencyProperty.RegisterReadOnly("IsInStartUp", typeof(bool), typeof(MainWindow), new PropertyMetadata(true, (obj, e) =>
         {
             obj.CoerceValue(IsToolBrowseAvailableProperty.DependencyProperty);
+            obj.CoerceValue(IsCheckForUpdateAvailableProperty.DependencyProperty);
         }));
         public bool IsInStartUp => (bool)this.GetValue(IsInStartUpProperty.DependencyProperty);
         private static readonly DependencyPropertyKey IsToolBrowseAvailableProperty = DependencyProperty.RegisterReadOnly("IsToolBrowseAvailable", typeof(bool), typeof(MainWindow), new PropertyMetadata(false, null, (obj, val) =>
         {
             return ((bool)val || (bool)obj.GetValue(IsInStartUpProperty.DependencyProperty));
         }));
+
+        private static readonly DependencyPropertyKey IsCheckForUpdateAvailableProperty = DependencyProperty.RegisterReadOnly("IsCheckForUpdateAvailable", typeof(bool), typeof(MainWindow), new PropertyMetadata(true, null, (obj, val) =>
+        {
+            bool original = (bool)val;
+            if (original)
+            {
+                bool mutated = (bool)obj.GetValue(IsInStartUpProperty.DependencyProperty);
+                return !mutated;
+            }
+            else
+            {
+                return false;
+            }
+        }));
+        public bool IsCheckForUpdateAvailable => (bool)this.GetValue(IsCheckForUpdateAvailableProperty.DependencyProperty);
         public bool IsToolBrowseAvailable => (bool)this.GetValue(IsToolBrowseAvailableProperty.DependencyProperty);
 
         private static readonly DependencyPropertyKey StarUpTextProperty = DependencyProperty.RegisterReadOnly("StarUpText", typeof(string), typeof(MainWindow), new PropertyMetadata($"Starting up\nSearching for '{ToolFilename}'"));
@@ -60,9 +79,11 @@ namespace youtube_dl_gui
         private RegistryKey registry;
         private VideoDownloadSession currentDownloadSession;
         private Regex regex_InvalidPathCharacters;
+        private HttpClient httpClient;
 
         public MainWindow()
         {
+            this.httpClient = null;
             this.registry = Registry.CurrentUser.CreateSubKey(Path.Combine("Software", "LamieYuI", "youtube-dl-gui"), true);
             string browsePath = (string)this.registry.GetValue("ExePath", string.Empty);
             if (string.IsNullOrWhiteSpace(browsePath))
@@ -96,6 +117,9 @@ namespace youtube_dl_gui
             this.cache_youtubeinfo = new Dictionary<string, YoutubeVideoInfo>();
             this.youtubeTool = new YoutubeDL();
             this.InitializeComponent();
+
+            this.CoerceValue(IsToolBrowseAvailableProperty.DependencyProperty);
+            this.CoerceValue(IsCheckForUpdateAvailableProperty.DependencyProperty);
         }
 
         protected override void OnClosed(EventArgs e)
@@ -431,23 +455,103 @@ namespace youtube_dl_gui
 
         private delegate void Session_ProgressChangedA();
 
-        //bool buttonCancelDownload_ClickLeft;
-        //private void ButtonCancelDownload_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        //{
-        //    if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
-        //    {
-        //        this.buttonCancelDownload_ClickLeft = true;
-        //    }
-        //    else if (this.buttonCancelDownload_ClickLeft)
-        //    {
-        //        this.buttonCancelDownload_ClickLeft = false;
-        //        this.currentDownloadSession?.CancelDownload();
-        //    }
-        //}
-
         private void ProgressBarButton_Click(object sender, RoutedEventArgs e)
         {
             this.currentDownloadSession?.CancelDownload();
+        }
+
+        private async void ButtonCheckForToolUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            this.SetValue(IsCheckForUpdateAvailableProperty, false);
+
+            try
+            {
+                if (this.httpClient == null)
+                {
+                    this.httpClient = new HttpClient();
+                    this.httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.v3+json");
+                    this.httpClient.DefaultRequestHeaders.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue()
+                    {
+                        Private = true,
+                        MustRevalidate = true
+                    };
+                    this.httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:67.0) Gecko/20100101 Firefox/67.0");
+                }
+
+                string latestVersion = null;
+                Uri latestVersionUri = null;
+
+                var task_currentVersion = this.youtubeTool.GetCLIVersion();
+
+                using (var repoResponse = await this.httpClient.GetAsync("https://api.github.com/repos/ytdl-org/youtube-dl/releases"))
+                {
+                    if (repoResponse.IsSuccessStatusCode)
+                    {
+                        using (Stream repoStream = await repoResponse.Content.ReadAsStreamAsync())
+                        using (StreamReader sr = new StreamReader(repoStream))
+                        using (JsonTextReader jtr = new JsonTextReader(sr))
+                        {
+                            var releases = await JArray.LoadAsync(jtr);
+                            if (releases.Count != 0)
+                            {
+                                for (int i = 0; i < releases.Count; i++)
+                                {
+                                    if (releases[i] is JObject latestRelease)
+                                    {
+                                        if (string.Equals(latestRelease.Value<string>("target_commitish"), "master", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            bool? isprerelease = latestRelease.Value<bool?>("prerelease");
+                                            if (isprerelease.HasValue && isprerelease.Value == false)
+                                            {
+                                                latestVersion = latestRelease.Value<string>("tag_name");
+                                                if (!Uri.TryCreate("", UriKind.Absolute, out latestVersionUri))
+                                                {
+                                                    latestVersionUri = new Uri("https://github.com/ytdl-org/youtube-dl/releases/latest");
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        throw new System.Net.WebException(repoResponse.ReasonPhrase);
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(latestVersion))
+                {
+                    throw new System.Net.WebException("Failed to obtain new version information.");
+                }
+                else
+                {
+                    string currentVersion = await task_currentVersion;
+                    if (string.Equals(currentVersion, latestVersion, StringComparison.OrdinalIgnoreCase))
+                    {
+                        MessageBox.Show(this, "Your CLI tool is already at latest version.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        if (MessageBox.Show(this, $"Found new version: {latestVersion}\nYour current version is: {currentVersion}\n\nDo you want to open release page with your browser to download?", "Prompt", MessageBoxButton.OK, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                        {
+                            Process.Start(latestVersionUri.OriginalString);
+                        }
+                    }
+                }
+            }
+            catch (System.Net.WebException webEx)
+            {
+                MessageBox.Show(this, webEx.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            this.SetValue(IsCheckForUpdateAvailableProperty, true);
         }
     }
 }
