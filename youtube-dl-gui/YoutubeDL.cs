@@ -94,8 +94,29 @@ namespace youtube_dl_gui.Youtube
 
                     try
                     {
-                        jtr = new JsonTextReader(proc.StandardOutput) { CloseInput = true };
-                        obj = JObject.Load(jtr);
+                        int peekedChar = proc.StandardOutput.Peek();
+                        if (peekedChar == -1)
+                        {
+                            string error = proc.StandardError.ReadToEnd();
+                            if (!string.IsNullOrWhiteSpace(error))
+                            {
+                                error = error.Trim();
+                                throw new ApplicationException(error);
+                            }
+                            else
+                            {
+                                throw new InvalidProgramException();
+                            }
+                        }
+                        else if (((char)peekedChar) == '{')
+                        {
+                            jtr = new JsonTextReader(proc.StandardOutput) { CloseInput = false };
+                            obj = JObject.Load(jtr);
+                        }
+                        else
+                        {
+                            throw new InvalidProgramException();
+                        }
                     }
                     finally
                     {
@@ -103,6 +124,8 @@ namespace youtube_dl_gui.Youtube
                         {
                             jtr.Close();
                         }
+                        proc.StandardOutput.Close();
+                        proc.StandardError.Close();
                         if (!proc.HasExited)
                             proc.Kill();
                         proc.WaitForExit(5000);

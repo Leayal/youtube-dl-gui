@@ -85,14 +85,16 @@ namespace youtube_dl_gui
         {
             this.httpClient = null;
             this.registry = Registry.CurrentUser.CreateSubKey(Path.Combine("Software", "LamieYuI", "youtube-dl-gui"), true);
-            string browsePath = (string)this.registry.GetValue("ExePath", string.Empty);
-            if (string.IsNullOrWhiteSpace(browsePath))
+            this.where_youtubedl = Task.Run(async () =>
             {
-                this.where_youtubedl = Helper.WhereAsync(ToolFilename);
-            }
-            else
-            {
-                this.where_youtubedl = Task.Run(() =>
+                string browsePath = (string)this.registry.GetValue("ExePath", string.Empty);
+                if (string.IsNullOrWhiteSpace(browsePath))
+                {
+                    string whereIsIt = await Helper.WhereAsync(ToolFilename);
+                    this.registry.SetValue("ExePath", whereIsIt, RegistryValueKind.String);
+                    return whereIsIt;
+                }
+                else
                 {
                     if (File.Exists(browsePath))
                     {
@@ -100,11 +102,20 @@ namespace youtube_dl_gui
                     }
                     else
                     {
-                        this.registry.DeleteValue("ExePath");
-                        return null;
+                        try
+                        {
+                            string whereIsIt = await Helper.WhereAsync(ToolFilename);
+                            this.registry.SetValue("ExePath", whereIsIt, RegistryValueKind.String);
+                            return whereIsIt;
+                        }
+                        catch (FileNotFoundException)
+                        {
+                            this.registry.DeleteValue("ExePath");
+                            throw;
+                        }
                     }
-                });
-            }
+                }
+            });
 
             this.regex_InvalidPathCharacters = new Regex($"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}–]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -126,6 +137,12 @@ namespace youtube_dl_gui
         {
             try
             {
+                if (this.httpClient != null)
+                {
+                    this.httpClient.CancelPendingRequests();
+                    this.httpClient.Dispose();
+                    this.httpClient = null;
+                }
                 this.registry.Dispose();
                 if (currentDownloadSession != null)
                 {
@@ -235,8 +252,17 @@ namespace youtube_dl_gui
             YoutubeVideoInfo something;
             if (!this.cache_youtubeinfo.TryGetValue(youtubeurl, out something))
             {
-                something = await this.youtubeTool.GetYoutubeVideoInformationAsync(youtubeurl);
-                this.cache_youtubeinfo.Add(youtubeurl, something);
+                try
+                {
+                    something = await this.youtubeTool.GetYoutubeVideoInformationAsync(youtubeurl);
+                    this.cache_youtubeinfo.Add(youtubeurl, something);
+                }
+                catch (Exception ex)
+                {
+                    this.SetValue(IsYoutubeDownloadingProperty, false);
+                    MessageBox.Show(this, ex.ToString(), "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
             }
 
             var formatStrings = new List<string>(something.Formats.Count + 1);
@@ -535,7 +561,7 @@ namespace youtube_dl_gui
                     }
                     else
                     {
-                        if (MessageBox.Show(this, $"Found new version: {latestVersion}\nYour current version is: {currentVersion}\n\nDo you want to open release page with your browser to download?", "Prompt", MessageBoxButton.OK, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                        if (MessageBox.Show(this, $"Found new version: {latestVersion}\nYour current version is: {currentVersion}\n\nDo you want to open release page with your browser to download?", "Prompt", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                         {
                             Process.Start(latestVersionUri.OriginalString);
                         }
