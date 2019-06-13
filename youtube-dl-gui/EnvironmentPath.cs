@@ -551,7 +551,7 @@ namespace Lamie.Environment
 
             // Skipped 16-bit system directory. Because I don't even know how to get its path.....
 
-            currentPlace = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Windows);
+            currentPlace = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Windows, System.Environment.SpecialFolderOption.DoNotVerify);
             searchedPlaces.Add(currentPlace);
             foreach (string filename in TryOpenSearch(currentPlace, pattern))
                 yield return filename;
@@ -631,7 +631,7 @@ namespace Lamie.Environment
             if (File.Exists(tmpFilename))
                 return tmpFilename;
 
-            tmpFilename = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Windows), filename);
+            tmpFilename = Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Windows, System.Environment.SpecialFolderOption.DoNotVerify), filename);
             if (File.Exists(tmpFilename))
                 return tmpFilename;
 
