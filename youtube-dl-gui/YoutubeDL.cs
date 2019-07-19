@@ -182,6 +182,7 @@ namespace youtube_dl_gui.Youtube
 
         public VideoDownloadSession(YoutubeDL tool, YoutubeVideoFormat format)
         {
+            this.DisableFixup = false;
             this._tool = tool;
             this.state = 0;
             this.myformat = format;
@@ -222,7 +223,7 @@ namespace youtube_dl_gui.Youtube
                 {
                     Exception myex = null;
                     
-                    string[] defaultArgs = new string[]
+                    List<string> defaultArgs = new List<string>(14)
                     {
                         "--no-warnings",
                         "--newline",
@@ -230,24 +231,21 @@ namespace youtube_dl_gui.Youtube
                         "--hls-prefer-native",
                         "--no-call-home",
                         "--format",
-                        this.myformat.FormatID,
-                        "--output",
-                        outputFile,
-                        myformat.VideoInfo.VideoHomepage.OriginalString
+                        this.myformat.FormatID
                     };
-
-                    IEnumerable<string> myparams;
-                    if (string.Equals(this.myformat.Protocol, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) || string.Equals(this.myformat.Protocol, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+                    if (this.DisableFixup)
                     {
-                        myparams = defaultArgs;
+                        defaultArgs.Add("--fixup");
+                        defaultArgs.Add("never");
                     }
-                    else
+                    if (!string.Equals(this.myformat.Protocol, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) && !string.Equals(this.myformat.Protocol, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
                     {
-                        var paramlist = new List<string>(defaultArgs.Length + 1);
-                        paramlist.Add("--hls-use-mpegts");
-                        myparams = paramlist;
+                        defaultArgs.Add("--hls-use-mpegts");
                     }
-                    proc.StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(myparams))
+                    defaultArgs.Add("--output");
+                    defaultArgs.Add(outputFile);
+                    defaultArgs.Add(myformat.VideoInfo.VideoHomepage.OriginalString);
+                    proc.StartInfo = new ProcessStartInfo(youtube_tool, Helper.GetArg(defaultArgs))
                     {
                         UseShellExecute = false,
                         RedirectStandardOutput = true,
@@ -307,6 +305,8 @@ namespace youtube_dl_gui.Youtube
                 throw new InvalidOperationException("The download has already been started.");
             }
         }
+
+        public bool DisableFixup { get; set; }
 
         public void Dispose() => this.proc.Dispose();
     }

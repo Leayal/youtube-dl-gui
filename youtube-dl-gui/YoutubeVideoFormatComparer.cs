@@ -10,7 +10,7 @@ namespace youtube_dl_gui
         {
             internal RevertYoutubeVideoFormatComparer() : base() { }
 
-            public override int Compare(YoutubeVideoFormat left, YoutubeVideoFormat right) => -base.Compare(left, right);
+            public override int Compare(YoutubeVideoFormat left, YoutubeVideoFormat right) => base.Compare(right, left);
         }
         public static readonly YoutubeVideoFormatComparer Default = new YoutubeVideoFormatComparer();
         public static readonly YoutubeVideoFormatComparer Revert = new RevertYoutubeVideoFormatComparer();

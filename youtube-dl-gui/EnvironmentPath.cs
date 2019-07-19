@@ -3,17 +3,17 @@ using System.Collections;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Reflection;
 using Microsoft.Win32;
+using System.Collections.ObjectModel;
 
 namespace Lamie.Environment
 {
     /// <summary>Represents a collection of paths (case-insensitive). Not thread-safe.</summary>
-    public sealed class EnvironmentPath : IList<string>
+    public sealed class EnvironmentPath : IList<string>, ICollection<string>, IEnumerable<string>, IEnumerable, IReadOnlyList<string>, IReadOnlyCollection<string>
     {
         const string EnvironmentName = "PATH";
 
@@ -116,10 +116,16 @@ namespace Lamie.Environment
             int starting = 0,
                 ending = -1;
 
+            
             unsafe
             {
                 fixed (char* c = data)
                 {
+                    if (c[count - 1] == splitter)
+                    {
+                        count--;
+                    }
+
                     for (int i = 0; i < count; i++)
                     {
                         currentChar = c[i];
@@ -139,36 +145,51 @@ namespace Lamie.Environment
                         {
                             if (!isInString)
                             {
-                                string path;
+                                int length;
                                 if (ending == -1)
                                 {
-                                    path = new string(c, starting, i - starting); //sb.ToString();
+                                    length = i - starting;
                                 }
                                 else
                                 {
-                                    path = new string(c, starting, ending - starting); //sb.ToString();
+                                    length = ending - starting;
                                     ending = -1;
                                 }
-                                starting = i + 1;
+                                if (length != 0)
+                                {
+                                    string path = new string(c, starting, length); //sb.ToString();
 
-                                result.Add(path);
+                                    if (!string.IsNullOrWhiteSpace(path))
+                                    {
+                                        result.Add(path);
+                                    }
+                                }
+                                starting = i + 1;
                             }
                         }
                     }
 
                     if (starting < (count - 1))
                     {
-                        string path;
+                        int length;
                         if (c[starting] == double_quote)
                         {
-                            path = new string(c, starting + 1, count - 2);
+                            starting++;
+                            length = (count - 2) - starting;
                         }
                         else
                         {
-                            path = new string(c, starting, count - 1);
+                            length = (count - 1) - starting;
                         }
 
-                        result.Add(path);
+                        if (length != 0)
+                        {
+                            string path = new string(c, starting, length);
+                            if (!string.IsNullOrWhiteSpace(path))
+                            {
+                                result.Add(path);
+                            }
+                        }
                     }
                 }
             }
@@ -249,6 +270,8 @@ namespace Lamie.Environment
         /// <summary>Gets or sets path at the given index.</summary>
         /// <param name="index">The index.</param>
         /// <returns></returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside the range of valid indexes.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null or empty string or whitespace string.</exception>
         public string this[int index]
         {
             get => this.paths[index];
@@ -275,21 +298,28 @@ namespace Lamie.Environment
             try
             {
                 key = Registry.LocalMachine.OpenSubKey(Path.Combine("System", "CurrentControlSet", "Control", "Session Manager"), false);
-                var keyValue = key.GetValue("SafeDllSearchMode");
-                if (keyValue == null)
+                if (key != null)
                 {
-                    return true;
-                }
-                else
-                {
-                    if (keyValue is int theInt)
-                    {
-                        return (theInt != 0);
-                    }
-                    else
+                    var keyValue = key.GetValue("SafeDllSearchMode");
+                    if (keyValue == null)
                     {
                         return true;
                     }
+                    else
+                    {
+                        if (keyValue is int theInt)
+                        {
+                            return (theInt != 0);
+                        }
+                        else
+                        {
+                            return true;
+                        }
+                    }
+                }
+                else
+                {
+                    return true;
                 }
             }
             catch
@@ -349,8 +379,13 @@ namespace Lamie.Environment
 
         /// <summary>Adds the specified path.</summary>
         /// <param name="path">The path to add to the set.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="path"/> is null or empty string or whitespace string.</exception>
         public void Add(string path)
         {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentNullException("File path cannot be null.", nameof(path));
+            }
             if (!this.dupChecker.Contains(path))
             {
                 this.dupChecker.Add(path);
@@ -413,42 +448,62 @@ namespace Lamie.Environment
             {
                 return string.Empty;
             }
-            else if (count == 0)
+            else if (count == 1)
             {
                 return this.paths.First();
             }
             else
             {
-                StringBuilder sb = new StringBuilder();
-                bool firstAppend = true;
+                int totalLength = 0;
 
-                foreach (string currentString in this.paths)
+                for (int i = 0; i < count; i++)
                 {
-                    if (!string.IsNullOrWhiteSpace(currentString))
-                    {
-                        if (firstAppend)
-                        {
-                            firstAppend = false;
-                        }
-                        else
-                        {
-                            sb.Append(';');
-                        }
+                    if (this.paths[i].IndexOf(';') != -1)
+                        totalLength += (this.paths[i].Length + 3);
+                    else
+                        totalLength += (this.paths[i].Length + 1);
+                }
 
-                        if (currentString.IndexOf(';') == -1)
+                // StringBuilder sb = new StringBuilder(totalLength);
+                string result = new string(char.MinValue, totalLength);
+                int currentIndex = 0,
+                    sizeOfChar = sizeof(char);
+
+                unsafe
+                {
+                    fixed (char* dst = result)
+                    {
+                        foreach (string currentString in this.paths)
                         {
-                            sb.Append(currentString);
-                        }
-                        else
-                        {
-                            sb.Append('"');
-                            sb.Append(currentString);
-                            sb.Append('"');
+                            if (currentString.IndexOf(';') == -1)
+                            {
+                                int length = currentString.Length * sizeOfChar;
+                                fixed (char* src = currentString)
+                                {
+                                    Buffer.MemoryCopy(src, dst + currentIndex, length, length);
+                                }
+                                currentIndex += currentString.Length;
+                            }
+                            else
+                            {
+                                dst[currentIndex] = '"';
+                                currentIndex++;
+                                int length = currentString.Length * sizeOfChar;
+                                fixed (char* src = currentString)
+                                {
+                                    Buffer.MemoryCopy(src, dst + currentIndex, length, length);
+                                }
+                                currentIndex += currentString.Length;
+                                dst[currentIndex] = '"';
+                                currentIndex++;
+                            }
+                            dst[currentIndex] = ';';
+                            currentIndex++;
                         }
                     }
                 }
 
-                return sb.ToString();
+                return result;
             }
         }
 
@@ -480,19 +535,24 @@ namespace Lamie.Environment
 
         /// <summary>Inserts a path at the specified index.</summary>
         /// <param name="index">The zero-based index at which item should be inserted.</param>
-        /// <param name="item">The path to insert.</param>
+        /// <param name="path">The path to insert.</param>
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is less than 0.-or- <paramref name="index"/> is greater than <seealso cref="Count"/>.</exception>
-        public void Insert(int index, string item)
+        /// <exception cref="ArgumentNullException"><paramref name="path"/> is null or empty string or whitespace string.</exception>
+        public void Insert(int index, string path)
         {
-            if (!this.dupChecker.Contains(item))
+            if (string.IsNullOrWhiteSpace(path))
             {
-                this.paths.Insert(index, item);
-                this.dupChecker.Add(item);
+                throw new ArgumentNullException("File path cannot be null.", nameof(path));
+            }
+            if (!this.dupChecker.Contains(path))
+            {
+                this.paths.Insert(index, path);
+                this.dupChecker.Add(path);
             }
             else
             {
-                this.paths.Remove(item);
-                this.paths.Insert(index, item);
+                this.paths.Remove(path);
+                this.paths.Insert(index, path);
             }
         }
 
@@ -506,6 +566,53 @@ namespace Lamie.Environment
             this.dupChecker.Remove(item);
         }
 
+        /// <summary>Sorts the paths in the entire collection using the default comparer.</summary>
+        public void Sort() => this.paths.Sort(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Sorts the paths in the entire collection using the specified <seealso cref="Comparison{String}"/>.</summary>
+        /// <param name="comparison">The <seealso cref="Comparison{String}"/> to use when comparing paths.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="comparison"/> is null.</exception>
+        /// <exception cref="ArgumentException">The implementation of <paramref name="comparison"/> caused an error during the sort. For example, comparison might not return 0 when comparing an item with itself.</exception>
+        public void Sort(Comparison<string> comparison)
+        {
+            if (comparison == null)
+            {
+                this.paths.Sort(StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                this.paths.Sort(comparison);
+            }
+        }
+
+        /// <summary>Sorts the paths in the entire collection using the specified comparer.</summary>
+        /// <param name="comparer">The <seealso cref="IComparer{String}"/> implementation to use when comparing strings, or null to use the default comparer <seealso cref="IComparer"/>.</param>
+        /// <exception cref="ArgumentException">The implementation of <paramref name="comparer"/> caused an error during the sort. For example, comparer might not return 0 when comparing an item with itself.</exception>
+        public void Sort(IComparer<string> comparer) => this.paths.Sort(comparer);
+
+        /// <summary>Searches for the specified path and returns the zero-based index of the last occurrence within the entire collection.</summary>
+        /// <param name="path">The path to locate in the collection.</param>
+        /// <returns>The zero-based index of the last occurrence of <paramref name="path"/> within the entire the collection, if found; otherwise, –1.</returns>
+        public int LastIndexOf(string path) => this.paths.LastIndexOf(path);
+
+        /// <summary>Searches for the specified path and returns the zero-based index of the last occurrence within the range of elements in the collection that extends from the first element to the specified index.</summary>
+        /// <param name="path">The path to locate in the collection.</param>
+        /// <param name="index">The zero-based starting index of the backward search.</param>
+        /// <returns>The zero-based index of the last occurrence of item within the range of elements in the collection that extends from the first element to <paramref name="index"/>, if found; otherwise, –1.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside the range of valid indexes for the collection.</exception>
+        public int LastIndexOf(string path, int index) => this.paths.LastIndexOf(path, index);
+
+        /// <summary>Searches for the specified object and returns the zero-based index of the last occurrence within the range of elements in the collection that contains the specified number of elements and ends at the specified index.</summary>
+        /// <param name="path">The path to locate in the collection.</param>
+        /// <param name="index">The zero-based starting index of the backward search.</param>
+        /// <param name="count">The number of paths in the section to search.</param>
+        /// <returns>The zero-based index of the last occurrence of item within the range of elements in the collection that contains count number of elements and ends at <paramref name="index"/>, if found; otherwise, –1.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is outside the range of valid indexes for the collection.-or- <paramref name="count"/> is less than 0.-or- <paramref name="index"/> and <paramref name="count"/> do not specify a valid section in the collection.</exception>
+        public int LastIndexOf(string path, int index, int count) => this.paths.LastIndexOf(path, index, count);
+
+        /// <summary>Returns a read-only <seealso cref="ReadOnlyCollection{String}"/> wrapper for the current collection.</summary>
+        /// <returns>An object that acts as a read-only wrapper around the current <seealso cref="EnvironmentPath"/>.</returns>
+        public ReadOnlyCollection<string> AsReadOnly() => this.paths.AsReadOnly();
         #region "WHERE function"
 
         /// <summary>Searchs for a file that match search pattern.</summary>
@@ -584,12 +691,13 @@ namespace Lamie.Environment
         {
             try
             {
-                return Directory.EnumerateFiles(path, pattern, SearchOption.TopDirectoryOnly);
+                if (Directory.Exists(path))
+                {
+                    return Directory.EnumerateFiles(path, pattern, SearchOption.TopDirectoryOnly);
+                }
             }
-            catch
-            {
-                return Enumerable.Empty<string>();
-            }
+            catch { }
+            return Enumerable.Empty<string>();
         }
 
         /// <summary>Searchs for file that match a search filename in a specified path.</summary>

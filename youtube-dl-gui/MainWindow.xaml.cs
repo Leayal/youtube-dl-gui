@@ -238,6 +238,7 @@ namespace youtube_dl_gui
         private async void ButtonYoutubeLink_Click(object sender, RoutedEventArgs e)
         {
             string youtubeurl = this.TextBoxYoutubeLink.Text;
+            bool disablefixup = (this.disableFixup.IsChecked == true);
             if (currentDownloadSession != null || string.IsNullOrWhiteSpace(youtubeurl))
             {
                 return;
@@ -412,6 +413,7 @@ namespace youtube_dl_gui
                         this.SetValue(YoutubeDownloadingTextProperty, $"Streaming: {formatString}\nTo: {sfd.FileName}");
                     }
                     currentDownloadSession = this.youtubeTool.PrepareVideoDownload(selectedFormat);
+                    currentDownloadSession.DisableFixup = disablefixup;
                     currentDownloadSession.ProgressChanged += Session_ProgressChanged;
                     currentDownloadSession.DownloadCompleted += Session_DownloadCompleted;
                     try

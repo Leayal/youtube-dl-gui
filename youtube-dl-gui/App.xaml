@@ -8,6 +8,7 @@
         <ResourceDictionary>
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
             <converters:EmptyStringConverter x:Key="EmptyStringConverter" />
+            <!--<converters:CodecToStringConverter x:Key="CodecToStringConverter" />-->
             <ResourceDictionary.MergedDictionaries>
                 <!-- MahApps.Metro resource dictionaries. Make sure that all file names are Case Sensitive! -->
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />

@@ -49,7 +49,7 @@ namespace youtube_dl_gui.Controls
             // this.itemList.Add
             if (this.Content is WrapPanel wrapPanel)
             {
-                YoutubeVideoFormatViewModel viewmodel = new YoutubeVideoFormatViewModel(item);
+                YoutubeVideoFormatViewModel viewmodel = new YoutubeVideoFormatViewModel(item.FormatID);
                 this.itemList.Add(item, viewmodel);
                 wrapPanel.Children.Add(viewmodel);
             }
